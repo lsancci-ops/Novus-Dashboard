@@ -4,12 +4,13 @@ NOVUS ASSET MANAGEMENT — Dashboard de Contrapartes
 Estilo visual: novus web (dark header + green accent + white cards)
 """
 
-import streamlit as st
-import pandas as pd
+import os
+import colorsys
 import numpy as np
+import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-import os
+import streamlit as st
 
 st.set_page_config(
     page_title="novus | agentes",
@@ -21,7 +22,7 @@ st.set_page_config(
 # ─────────────────────────────────────────────
 # PALETA — extraída del sitio web de Novus
 # ─────────────────────────────────────────────
-DARK_BG    = "#1A1C1A"   # fondo hero oscuro (casi negro con tinte verde)
+DARK_BG    = "#1A1C1A"   # fondo hero oscuro
 DARK_CARD  = "#222522"   # card oscura
 GREEN      = "#5DBB63"   # verde acento principal
 GREEN_DIM  = "#3D8C42"   # verde más oscuro
@@ -32,13 +33,13 @@ DARK_TEXT  = "#1A1C1A"
 BORDER     = "#E8EBE8"
 
 ASSET_COLORS = {
-    "Fixed Income":          "#2D6A4F",   # verde oscuro
-    "Renta Variable":        "#5DBB63",   # verde principal
-    "Licitaciones":          "#95D5A0",   # verde claro
-    "Cauciones Colocadoras": "#1B4332",   # verde muy oscuro
-    "Pases Colocadores":     "#74C69D",   # verde menta
-    "Futuros":               "#B7E4C7",   # verde muy claro
-    "CPD y Pagarés":         "#40916C",   # verde medio
+    "Fixed Income":          "#2D6A4F",
+    "Renta Variable":        "#5DBB63",
+    "Licitaciones":          "#95D5A0",
+    "Cauciones Colocadoras": "#1B4332",
+    "Pases Colocadores":      "#74C69D",
+    "Futuros":               "#B7E4C7",
+    "CPD y Pagarés":         "#40916C",
 }
 
 CHART_FONT = dict(family="'DM Sans', 'Helvetica Neue', Arial, sans-serif", color="#1A1C1A")
@@ -91,19 +92,6 @@ st.markdown(f"""
       content: '●'; font-size: .5rem;
   }}
 
-  /* ── FILTROS BAR ── */
-  .filter-bar {{
-      background: {DARK_BG};
-      padding: 12px 48px;
-      margin: 0 -1rem 24px -1rem;
-      display: flex; align-items: center; gap: 24px;
-      border-bottom: 1px solid rgba(93,187,99,.2);
-  }}
-  .filter-label {{
-      font-size: .7rem; font-weight: 600; letter-spacing: 1.5px;
-      color: {GRAY_TEXT}; text-transform: uppercase;
-  }}
-
   /* ── KPI CARDS ── */
   .kpi-card {{
       background: {WHITE};
@@ -140,7 +128,11 @@ st.markdown(f"""
       margin-bottom: 20px;
   }}
 
-  /* ── VAR TABLE ── */
+  /* ── VAR TABLE CONTAINER ── */
+  .table-container {{
+      width: 100%;
+      overflow-x: auto;
+  }}
   .var-table {{ width:100%; border-collapse: collapse; font-size: .82rem; }}
   .var-table th {{
       font-size: .65rem; letter-spacing: 1.2px; text-transform: uppercase;
@@ -159,15 +151,7 @@ st.markdown(f"""
   .neg {{ color: #E05555; font-weight: 600; }}
   .neu {{ color: {GRAY_TEXT}; }}
 
-  /* ── BADGE PILL ── */
-  .pill {{
-      display: inline-block;
-      border: 1px solid {BORDER}; border-radius: 20px;
-      padding: 2px 10px; font-size: .65rem; font-weight: 600;
-      letter-spacing: 1px; text-transform: uppercase; color: {GRAY_TEXT};
-  }}
-
-  /* ── MULTISELECT — eliminar rojo, reemplazar por dark+green ── */
+  /* ── MULTISELECT & INPUTS CUSTOM ── */
   .stMultiSelect [data-baseweb="tag"] {{
       background-color: {DARK_BG} !important;
       border: 1px solid rgba(93,187,99,.5) !important;
@@ -177,45 +161,11 @@ st.markdown(f"""
       color: {GREEN} !important;
       font-size: .75rem !important;
       font-weight: 500 !important;
-      letter-spacing: .3px;
   }}
   .stMultiSelect [data-baseweb="tag"] button svg {{
       fill: {GREEN} !important;
   }}
-  .stMultiSelect [data-baseweb="tag"] button:hover svg {{
-      fill: #FFFFFF !important;
-  }}
-  /* Dropdown del multiselect */
-  .stMultiSelect [data-baseweb="select"] > div {{
-      border-color: {BORDER} !important;
-      border-radius: 8px !important;
-      background: white !important;
-  }}
-  .stMultiSelect [data-baseweb="select"] > div:focus-within {{
-      border-color: {GREEN} !important;
-      box-shadow: 0 0 0 2px rgba(93,187,99,.2) !important;
-  }}
 
-  /* Date input — quitar rojo */
-  .stDateInput input {{
-      border-color: {BORDER} !important;
-      border-radius: 8px !important;
-  }}
-  .stDateInput input:focus {{
-      border-color: {GREEN} !important;
-      box-shadow: 0 0 0 2px rgba(93,187,99,.2) !important;
-  }}
-
-  /* Labels de filtros */
-  .stMultiSelect label, .stDateInput label {{
-      font-size: .65rem !important;
-      font-weight: 600 !important;
-      letter-spacing: 1.5px !important;
-      color: {GRAY_TEXT} !important;
-      text-transform: uppercase !important;
-  }}
-
-  /* ocultar branding streamlit */
   #MainMenu, footer {{ visibility: hidden; }}
   header[data-testid="stHeader"] {{ background: transparent; height: 0; }}
   .block-container {{ padding-top: 0 !important; padding-bottom: 2rem !important; }}
@@ -234,7 +184,7 @@ def load_data(path):
 
 CSV_PATH = os.path.join(os.path.dirname(__file__), "base_historica_acumulada.csv")
 if not os.path.exists(CSV_PATH):
-    st.error("No se encontró `base_historica_acumulada.csv`.")
+    st.error("No se encontró el archivo `base_historica_acumulada.csv` en el directorio de la aplicación.")
     st.stop()
 
 df_raw = load_data(CSV_PATH)
@@ -253,39 +203,40 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
+st.markdown("<br>", unsafe_allow_html=True)
+
 # ─────────────────────────────────────────────
-# FILTROS (sobre fondo oscuro, minimalistas)
+# FILTROS
 # ─────────────────────────────────────────────
 fc1, fc2, fc3 = st.columns([3, 3, 2])
 with fc1:
     assets_all = sorted(df_raw["Asset_Category"].unique())
-    assets_sel = st.multiselect("asset category", assets_all,
-                                default=assets_all, label_visibility="visible")
+    assets_sel = st.multiselect("Asset Category", assets_all, default=assets_all)
 with fc2:
     fondos_all = sorted(df_raw["Fondo"].unique())
-    fondos_sel = st.multiselect("fondo", fondos_all,
-                                default=fondos_all, label_visibility="visible")
+    fondos_sel = st.multiselect("Fondo", fondos_all, default=fondos_all)
 with fc3:
     fmin, fmax = df_raw["Fecha"].min().date(), df_raw["Fecha"].max().date()
-    fecha_rango = st.date_input("período", value=(fmin, fmax),
-                                min_value=fmin, max_value=fmax,
-                                label_visibility="visible")
+    fecha_rango = st.date_input("Período", value=(fmin, fmax), min_value=fmin, max_value=fmax)
 
-# Aplicar filtros
+# Aplicar Filtros con validación estricta
 df = df_raw.copy()
-if len(fecha_rango) == 2:
+if isinstance(fecha_rango, tuple) and len(fecha_rango) == 2:
     df = df[(df["Fecha"].dt.date >= fecha_rango[0]) & (df["Fecha"].dt.date <= fecha_rango[1])]
-if assets_sel: df = df[df["Asset_Category"].isin(assets_sel)]
-if fondos_sel: df = df[df["Fondo"].isin(fondos_sel)]
+
+if assets_sel:
+    df = df[df["Asset_Category"].isin(assets_sel)]
+if fondos_sel:
+    df = df[df["Fondo"].isin(fondos_sel)]
 
 if df.empty:
-    st.warning("Sin datos para los filtros seleccionados.")
+    st.warning("No hay datos disponibles para los filtros seleccionados.")
     st.stop()
 
 st.markdown("<br>", unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────
-# MÉTRICAS
+# MÉTRICAS Y CALCULOS
 # ─────────────────────────────────────────────
 max_d  = df["Fecha"].max()
 ytd_s  = pd.Timestamp(year=max_d.year, month=1, day=1)
@@ -295,20 +246,17 @@ d365   = max_d - pd.Timedelta(days=365)
 
 vol_total = df["Volumen_USD"].sum()
 vol_ytd   = df[df["Fecha"] >= ytd_s]["Volumen_USD"].sum()
-vol_30d   = df[df["Fecha"] >= d30]["Volumen_USD"].sum()
-gas_total = df["Gastos_USD"].sum()
-cost_bps  = gas_total / vol_total * 10_000 if vol_total > 0 else 0
 
 asset_30d = df[df["Fecha"] >= d30].groupby("Asset_Category")["Volumen_USD"].sum()
 asset_dom = asset_30d.idxmax() if not asset_30d.empty else "—"
-asset_dom_pct = asset_30d.max() / asset_30d.sum() * 100 if not asset_30d.empty else 0
+asset_dom_pct = (asset_30d.max() / asset_30d.sum() * 100) if not asset_30d.empty and asset_30d.sum() > 0 else 0
 
 ag_vol = df.groupby("Agente")["Volumen_USD"].sum()
 agente_lider = ag_vol.idxmax() if not ag_vol.empty else "—"
-agente_lider_pct = ag_vol.max() / vol_total * 100 if vol_total > 0 else 0
+agente_lider_pct = (ag_vol.max() / vol_total * 100) if vol_total > 0 else 0
 
 shares = (ag_vol / vol_total * 100) ** 2
-hhi = shares.sum()
+hhi = shares.sum() if vol_total > 0 else 0
 conc_label = "baja" if hhi < 1500 else ("media" if hhi < 2500 else "alta")
 
 def fmt_usd(v):
@@ -372,20 +320,17 @@ with col_pie:
     df_pie = df.groupby("Agente")["Volumen_USD"].sum().reset_index()
     df_pie = df_pie.sort_values("Volumen_USD", ascending=False)
     umbral = vol_total * 0.02
-    df_pie["Label"] = df_pie.apply(
-        lambda r: r["Agente"] if r["Volumen_USD"] >= umbral else "otros", axis=1)
-    df_pie_g = df_pie.groupby("Label")["Volumen_USD"].sum().reset_index()
-    df_pie_g = df_pie_g.sort_values("Volumen_USD", ascending=False)
+    df_pie["Label"] = df_pie.apply(lambda r: r["Agente"] if r["Volumen_USD"] >= umbral else "otros", axis=1)
+    df_pie_g = df_pie.groupby("Label")["Volumen_USD"].sum().reset_index().sort_values("Volumen_USD", ascending=False)
 
     n = len(df_pie_g)
-    import colorsys
-    def gen_greens(n):
+    def gen_greens(n_items):
         cols = []
-        for i in range(n):
+        for i in range(n_items):
             h = 0.33
-            s = 0.3 + (i / max(n-1,1)) * 0.55
-            v = 0.95 - (i / max(n-1,1)) * 0.45
-            r,g,b = colorsys.hsv_to_rgb(h, s, v)
+            s = 0.3 + (i / max(n_items - 1, 1)) * 0.55
+            v = 0.95 - (i / max(n_items - 1, 1)) * 0.45
+            r, g, b = colorsys.hsv_to_rgb(h, s, v)
             cols.append(f"#{int(r*255):02x}{int(g*255):02x}{int(b*255):02x}")
         return cols
 
@@ -407,10 +352,7 @@ with col_pie:
     ))
     fig_pie.update_layout(
         showlegend=True,
-        legend=dict(
-            font=dict(size=10, family="'DM Sans', 'Helvetica Neue', Arial, sans-serif", color=DARK_TEXT),
-            orientation="v", x=1, y=0.5,
-        ),
+        legend=dict(font=dict(size=10, family="'DM Sans', 'Helvetica Neue', Arial, sans-serif", color=DARK_TEXT), orientation="v", x=1, y=0.5),
         plot_bgcolor="white", paper_bgcolor="white",
         margin=dict(l=10, r=10, t=10, b=10),
         height=360,
@@ -420,8 +362,7 @@ with col_pie:
 
 with col_var:
     st.markdown(f"""
-    <div style="font-size:.65rem; font-weight:600; letter-spacing:1.5px;
-                text-transform:uppercase; color:{GRAY_TEXT}; margin-bottom:14px;">
+    <div style="font-size:.65rem; font-weight:600; letter-spacing:1.5px; text-transform:uppercase; color:{GRAY_TEXT}; margin-bottom:14px;">
       variación por asset category
     </div>
     """, unsafe_allow_html=True)
@@ -434,7 +375,7 @@ with col_var:
 
     def fmt_pct(v):
         if v is None or (isinstance(v, float) and np.isnan(v)):
-            return f'<span class="neu">—</span>'
+            return '<span class="neu">—</span>'
         cls = "pos" if v >= 0 else "neg"
         sign = "+" if v >= 0 else ""
         return f'<span class="{cls}">{sign}{v:.1f}%</span>'
@@ -456,12 +397,14 @@ with col_var:
         </tr>"""
 
     st.markdown(f"""
-    <table class="var-table">
-      <thead><tr>
-        <th>asset</th><th>30d</th><th>60d</th><th>365d</th><th>ytd</th>
-      </tr></thead>
-      <tbody>{rows_var}</tbody>
-    </table>
+    <div class="table-container">
+        <table class="var-table">
+          <thead><tr>
+            <th>asset</th><th>30d</th><th>60d</th><th>365d</th><th>ytd</th>
+          </tr></thead>
+          <tbody>{rows_var}</tbody>
+        </table>
+    </div>
     """, unsafe_allow_html=True)
 
 st.markdown("<br><br>", unsafe_allow_html=True)
@@ -476,19 +419,8 @@ st.markdown("""
 
 col_bar, col_line = st.columns([48, 52])
 
-PLOTLY_BASE = dict(
-    plot_bgcolor="white",
-    paper_bgcolor="white",
-    font=dict(family="DM Sans, Segoe UI, sans-serif", color=DARK_TEXT),
-    margin=dict(l=10, r=10, t=36, b=50),
-    height=340,
-    xaxis=dict(showgrid=False, tickangle=-40, tickfont=dict(size=9, color=GRAY_TEXT)),
-    yaxis=dict(gridcolor="#F0F2F0", tickfont=dict(size=9, color=GRAY_TEXT)),
-)
-
 with col_bar:
-    df_fondo = df.groupby("Fondo")["Volumen_USD"].sum().reset_index()
-    df_fondo = df_fondo.sort_values("Volumen_USD", ascending=True)
+    df_fondo = df.groupby("Fondo")["Volumen_USD"].sum().reset_index().sort_values("Volumen_USD", ascending=True)
 
     fig_bar = go.Figure(go.Bar(
         x=df_fondo["Volumen_USD"],
@@ -498,18 +430,14 @@ with col_bar:
         marker_line_width=0,
         text=[fmt_usd(v) for v in df_fondo["Volumen_USD"]],
         textposition="outside",
-        textfont=dict(size=9, color=GRAY_TEXT,
-                      family="'DM Sans', 'Helvetica Neue', Arial, sans-serif"),
+        textfont=dict(size=9, color=GRAY_TEXT, family="'DM Sans', 'Helvetica Neue', Arial, sans-serif"),
     ))
     fig_bar.update_layout(
-        title=dict(text="volumen por fondo",
-                   font=dict(size=12, color=DARK_TEXT,
-                             family="'DM Sans', 'Helvetica Neue', Arial, sans-serif")),
+        title=dict(text="volumen por fondo", font=dict(size=12, color=DARK_TEXT, family="'DM Sans', 'Helvetica Neue', Arial, sans-serif")),
         plot_bgcolor="white", paper_bgcolor="white",
         font=CHART_FONT,
         xaxis=dict(showticklabels=False, showgrid=False),
-        yaxis=dict(tickfont=dict(size=10, color=DARK_TEXT,
-                                 family="'DM Sans', 'Helvetica Neue', Arial, sans-serif")),
+        yaxis=dict(tickfont=dict(size=10, color=DARK_TEXT, family="'DM Sans', 'Helvetica Neue', Arial, sans-serif")),
         margin=dict(l=10, r=90, t=36, b=10),
         height=380,
     )
@@ -528,20 +456,12 @@ with col_line:
     )
     fig_line.update_traces(line=dict(width=2.5), marker=dict(size=5))
     fig_line.update_layout(
-        title=dict(text="evolución mensual por asset",
-                   font=dict(size=12, color=DARK_TEXT,
-                             family="'DM Sans', 'Helvetica Neue', Arial, sans-serif")),
+        title=dict(text="evolución mensual por asset", font=dict(size=12, color=DARK_TEXT, family="'DM Sans', 'Helvetica Neue', Arial, sans-serif")),
         plot_bgcolor="white", paper_bgcolor="white",
         font=CHART_FONT,
-        xaxis=dict(showgrid=False, tickangle=-40,
-                   tickfont=dict(size=9, color=GRAY_TEXT,
-                                 family="'DM Sans', 'Helvetica Neue', Arial, sans-serif")),
-        yaxis=dict(gridcolor="#EDEFED", tickformat="$,.0f",
-                   tickfont=dict(size=9, color=GRAY_TEXT,
-                                 family="'DM Sans', 'Helvetica Neue', Arial, sans-serif")),
-        legend=dict(orientation="h", y=1.14, x=0,
-                    font=dict(size=9, family="'DM Sans', 'Helvetica Neue', Arial, sans-serif"),
-                    title_text=""),
+        xaxis=dict(showgrid=False, tickangle=-40, tickfont=dict(size=9, color=GRAY_TEXT, family="'DM Sans', 'Helvetica Neue', Arial, sans-serif")),
+        yaxis=dict(gridcolor="#EDEFED", tickformat="$,.0f", tickfont=dict(size=9, color=GRAY_TEXT, family="'DM Sans', 'Helvetica Neue', Arial, sans-serif")),
+        legend=dict(orientation="h", y=1.14, x=0, font=dict(size=9, family="'DM Sans', 'Helvetica Neue', Arial, sans-serif"), title_text=""),
         margin=dict(l=10, r=10, t=50, b=50),
         height=380,
     )
@@ -551,8 +471,7 @@ with col_line:
 # FOOTER
 # ─────────────────────────────────────────────
 st.markdown(f"""
-<div style="background:{DARK_BG}; margin: 2rem -1rem -1rem -1rem;
-            padding: 20px 48px; display:flex; justify-content:space-between; align-items:center;">
+<div style="background:{DARK_BG}; margin: 2rem -1rem -1rem -1rem; padding: 20px 48px; display:flex; justify-space-between; align-items:center;">
   <div style="color:{GREEN}; font-size:.9rem; font-weight:600; letter-spacing:.5px;">
     novus <span style="color:#9AADA9; font-weight:300;">asset management</span>
   </div>
