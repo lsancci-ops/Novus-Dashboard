@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 NOVUS ASSET MANAGEMENT — Dashboard de Contrapartes
-Versión con Estilo Corporativo Personalizado (Dark/Green Tags)
+Versión con Top 7 FCI y Gráfico de Líneas Corregido
 """
 
 import os
@@ -31,20 +31,21 @@ GRAY_TEXT = "#666666"
 DARK_TEXT = "#1A1C1A"
 BORDER    = "#E2E8E2"
 
+# Paleta diferenciada con alto contraste para distinguir fácilmente cada Asset Category
 ASSET_COLORS = {
-    "Fixed Income":          "#2D6A4F",
-    "Renta Variable":        "#5DBB63",
-    "Licitaciones":          "#95D5A0",
-    "Cauciones Colocadoras": "#1B4332",
-    "Pases Colocadores":      "#74C69D",
-    "Futuros":               "#B7E4C7",
-    "CPD y Pagarés":         "#40916C",
+    "Fixed Income":          "#1B4332",  # Verde bosque oscuro
+    "Renta Variable":        "#5DBB63",  # Verde acento Novus
+    "Licitaciones":          "#D97706",  # Ámbar / Dorado
+    "Cauciones Colocadoras": "#0284C7",  # Azul profesional
+    "Pases Colocadores":      "#10B981",  # Esmeralda
+    "Futuros":               "#8B5CF6",  # Púrpura suave
+    "CPD y Pagarés":         "#06B6D4",  # Cyan / Turquesa
 }
 
 FONT_FAMILY = "'DM Sans', Arial, sans-serif"
 
 # ─────────────────────────────────────────────
-# CSS — OVERRIDE TOTAL DE COMPONENTES STREAMLIT
+# CSS — ESTILO CORPORATIVO
 # ─────────────────────────────────────────────
 st.markdown(f"""
 <style>
@@ -76,7 +77,7 @@ st.markdown(f"""
       border-radius: 20px; padding: 3px 12px; font-size: .75rem; color: {GREEN}; font-weight: 500;
   }}
 
-  /* ── EXPANDER (FILTROS) ESTILO NOBLE ── */
+  /* ── EXPANDER (FILTROS) ── */
   div[data-testid="stExpander"] {{
       background-color: {WHITE} !important;
       border: 1px solid {BORDER} !important;
@@ -95,8 +96,7 @@ st.markdown(f"""
       color: {GREEN} !important;
   }}
 
-  /* ── ELIMINAR EL ROJO DE STREAMLIT EN MULTISELECT ── */
-  /* Labels */
+  /* ── CÁPSULAS MULTISELECT ── */
   .stMultiSelect label {{
       font-size: .68rem !important;
       font-weight: 700 !important;
@@ -105,7 +105,6 @@ st.markdown(f"""
       color: {GRAY_TEXT} !important;
       margin-bottom: 4px !important;
   }}
-  /* Caja de entrada */
   .stMultiSelect [data-baseweb="select"] > div {{
       background-color: #FAFAFA !important;
       border: 1px solid {BORDER} !important;
@@ -116,7 +115,6 @@ st.markdown(f"""
       border-color: {GREEN} !important;
       box-shadow: 0 0 0 2px rgba(93, 187, 99, 0.15) !important;
   }}
-  /* CÁPSULAS / TAGS SELECCIONADAS (Rojo -> Dark + Verde) */
   .stMultiSelect [data-baseweb="tag"] {{
       background-color: {DARK_BG} !important;
       border: 1px solid rgba(93, 187, 99, 0.4) !important;
@@ -128,12 +126,8 @@ st.markdown(f"""
       font-size: .75rem !important;
       font-weight: 600 !important;
   }}
-  /* Botón 'X' de borrar tag */
   .stMultiSelect [data-baseweb="tag"] svg {{
       fill: {GREEN} !important;
-  }}
-  .stMultiSelect [data-baseweb="tag"] button:hover {{
-      background-color: rgba(93, 187, 99, 0.2) !important;
   }}
 
   /* ── CARDS KPI ── */
@@ -205,7 +199,7 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────
-# FILTROS CON ESTILO CUSTOM NOVUS
+# FILTROS
 # ─────────────────────────────────────────────
 with st.expander("🔍 Filtrar datos (Vacío = Selecciona Todos)", expanded=False):
     f_col1, f_col2, f_col3, f_col4 = st.columns(4)
@@ -358,14 +352,17 @@ with col_var:
 st.markdown("<br>", unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────
-# SECCIÓN: BARRAS FONDO + LÍNEA ASSET
+# SECCIÓN: EVOLUCIÓN MENSUAL Y TOP 7 FCI
 # ─────────────────────────────────────────────
 st.markdown('<div class="section-title">Evolución Mensual</div><div class="section-underline"></div>', unsafe_allow_html=True)
 
 col_bar, col_line = st.columns([45, 55])
 
 with col_bar:
-    df_fondo = df.groupby("Fondo")["Volumen_USD"].sum().reset_index().sort_values("Volumen_USD", ascending=True)
+    # FILTRADO DE TOP 7 FONDOS / FCI
+    df_fondo = df.groupby("Fondo")["Volumen_USD"].sum().reset_index()
+    df_fondo = df_fondo.sort_values("Volumen_USD", ascending=False).head(7)
+    df_fondo = df_fondo.sort_values("Volumen_USD", ascending=True)
 
     fig_bar = go.Figure(go.Bar(
         x=df_fondo["Volumen_USD"],
@@ -373,14 +370,16 @@ with col_bar:
         orientation="h",
         marker_color=GREEN,
         text=[fmt_usd(v) for v in df_fondo["Volumen_USD"]],
-        textposition="auto"
+        textposition="auto",
+        cliponaxis=False
     ))
     fig_bar.update_layout(
-        title=dict(text="Volumen por Fondo", font=dict(size=12)),
+        title=dict(text="Top 7 Volumen por Fondo (FCI)", font=dict(size=12, family=FONT_FAMILY)),
         plot_bgcolor="white", paper_bgcolor="white",
         xaxis=dict(showticklabels=False, showgrid=False),
+        yaxis=dict(tickfont=dict(size=10, color=DARK_TEXT, family=FONT_FAMILY)),
         margin=dict(l=10, r=20, t=35, b=10),
-        height=320
+        height=380
     )
     st.plotly_chart(fig_bar, use_container_width=True)
 
@@ -393,15 +392,31 @@ with col_line:
         color_discrete_map=ASSET_COLORS,
         markers=True
     )
-    fig_line.update_traces(line=dict(width=2), marker=dict(size=4))
+    fig_line.update_traces(
+        line=dict(width=2.5),
+        marker=dict(size=5),
+        cliponaxis=False  # Evita recortar los puntos superiores
+    )
     fig_line.update_layout(
-        title=dict(text="Evolución Mensual por Asset", font=dict(size=12)),
+        title=dict(text="Evolución Mensual por Asset Category", font=dict(size=12, family=FONT_FAMILY)),
         plot_bgcolor="white", paper_bgcolor="white",
-        xaxis=dict(showgrid=False, tickangle=-45),
-        yaxis=dict(gridcolor="#EDEFED", tickformat="$,.0f"),
-        legend=dict(orientation="h", y=1.1, x=0, font=dict(size=8), title_text=""),
-        margin=dict(l=10, r=10, t=35, b=30),
-        height=320
+        xaxis=dict(showgrid=False, tickangle=-45, tickfont=dict(size=9, color=GRAY_TEXT, family=FONT_FAMILY)),
+        yaxis=dict(
+            gridcolor="#EDEFED",
+            tickformat="$,.0f",
+            tickfont=dict(size=9, color=GRAY_TEXT, family=FONT_FAMILY),
+            autorange=True,
+            rangemode="tozero"
+        ),
+        legend=dict(
+            orientation="h",
+            yanchor="top", y=-0.22,  # Leyenda abajo del gráfico para no encimar con los datos
+            xanchor="center", x=0.5,
+            font=dict(size=8.5, family=FONT_FAMILY),
+            title_text=""
+        ),
+        margin=dict(l=10, r=15, t=40, b=80),  # Margen superior e inferior ampliados
+        height=380
     )
     st.plotly_chart(fig_line, use_container_width=True)
 
