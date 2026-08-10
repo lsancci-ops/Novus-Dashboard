@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 NOVUS ASSET MANAGEMENT — Dashboard de Contrapartes
-Streamlit app que lee base_historica_acumulada.csv
+Réplica del reporte Power BI "Agentes"
 """
 
 import streamlit as st
@@ -9,37 +9,40 @@ import pandas as pd
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 import os
 
 # ─────────────────────────────────────────────
-# CONFIG PÁGINA
+# CONFIG
 # ─────────────────────────────────────────────
 st.set_page_config(
-    page_title="Novus AM | Dashboard Contrapartes",
+    page_title="Novus AM | Agentes",
     page_icon="📊",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="collapsed",
 )
 
 # ─────────────────────────────────────────────
-# COLORES NOVUS
+# COLORES (extraídos del tema PBI)
 # ─────────────────────────────────────────────
-NAVY   = "#1B365D"
-STEEL  = "#2C4D75"
-GOLD   = "#E8B84B"
-LIGHT  = "#EBF1F5"
-WHITE  = "#FFFFFF"
-GRAY   = "#4A5568"
+NAVY    = "#12239E"
+BLUE    = "#118DFF"
+ORANGE  = "#E66C37"
+PURPLE  = "#6B007B"
+PINK    = "#E044A7"
+VIOLET  = "#744EC2"
+GOLD    = "#D9B300"
+RED     = "#D64550"
+BG      = "#F4F6FB"
+CARD_BG = "#FFFFFF"
 
-PALETTE_ASSETS = {
-    "Fixed Income":          "#1B365D",
-    "Renta Variable":        "#2C7BE5",
-    "Licitaciones":          "#E8B84B",
+ASSET_COLORS = {
+    "Fixed Income":          NAVY,
+    "Renta Variable":        BLUE,
+    "Licitaciones":          GOLD,
     "Cauciones Colocadoras": "#27AE60",
-    "Pases Colocadores":     "#8E44AD",
-    "Futuros":               "#E74C3C",
-    "CPD y Pagarés":         "#F39C12",
+    "Pases Colocadores":     VIOLET,
+    "Futuros":               RED,
+    "CPD y Pagarés":         ORANGE,
 }
 
 # ─────────────────────────────────────────────
@@ -47,390 +50,355 @@ PALETTE_ASSETS = {
 # ─────────────────────────────────────────────
 st.markdown(f"""
 <style>
-  /* fondo general */
-  .stApp {{ background-color: #F4F6F9; }}
+  .stApp {{ background-color: {BG}; }}
 
   /* header */
-  .novus-header {{
-      background: linear-gradient(135deg, {NAVY} 0%, {STEEL} 100%);
-      padding: 20px 32px;
-      border-radius: 12px;
-      margin-bottom: 24px;
-      display: flex;
-      align-items: center;
-      gap: 16px;
+  .pbi-header {{
+      background: linear-gradient(90deg, {NAVY} 0%, #1B365D 100%);
+      padding: 14px 28px;
+      border-radius: 8px;
+      margin-bottom: 18px;
+      display: flex; align-items: center; gap: 14px;
   }}
-  .novus-header h1 {{
-      color: {GOLD};
-      font-size: 1.6rem;
-      font-weight: 800;
-      margin: 0;
-      font-family: 'Segoe UI', sans-serif;
+  .pbi-header h1 {{
+      color: #FFFFFF; font-size: 1.25rem; font-weight: 700;
+      margin: 0; font-family: 'Segoe UI', sans-serif; letter-spacing: .3px;
   }}
-  .novus-header p {{
-      color: #CBD5E0;
-      font-size: .85rem;
-      margin: 2px 0 0;
-  }}
+  .pbi-header p {{ color: #A0AEC0; font-size: .8rem; margin: 0; }}
 
-  /* KPI cards */
-  .kpi-card {{
-      background: {WHITE};
-      border-radius: 12px;
-      padding: 18px 22px;
-      box-shadow: 0 2px 12px rgba(0,0,0,.08);
-      border-top: 4px solid {NAVY};
+  /* KPI cards — estilo Power BI */
+  .kpi-wrap {{
+      background: {CARD_BG};
+      border-radius: 6px;
+      padding: 16px 18px 14px;
+      box-shadow: 0 1px 6px rgba(0,0,0,.08);
+      border-left: 4px solid {BLUE};
+      height: 100%;
   }}
-  .kpi-label {{
-      font-size: .78rem;
-      color: {GRAY};
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: .5px;
+  .kpi-title {{
+      font-size: .7rem; color: #718096;
+      text-transform: uppercase; letter-spacing: .6px; font-weight: 600;
   }}
-  .kpi-value {{
-      font-size: 1.55rem;
-      font-weight: 800;
-      color: {NAVY};
-      margin-top: 4px;
+  .kpi-main {{
+      font-size: 1.6rem; font-weight: 800; color: {NAVY};
+      line-height: 1.2; margin: 4px 0 2px;
   }}
   .kpi-sub {{
-      font-size: .75rem;
-      color: {GRAY};
-      margin-top: 2px;
+      font-size: .72rem; color: #A0AEC0;
   }}
 
-  /* sidebar */
-  section[data-testid="stSidebar"] {{
-      background: {NAVY} !important;
+  /* Tabla Var% */
+  .var-table {{ width:100%; border-collapse: collapse; font-size: .82rem; }}
+  .var-table th {{
+      background: {NAVY}; color: white;
+      padding: 7px 10px; text-align: center; font-weight: 600;
   }}
-  section[data-testid="stSidebar"] * {{
-      color: #E2E8F0 !important;
-  }}
-  section[data-testid="stSidebar"] .stMultiSelect > div > div {{
-      background: {STEEL} !important;
-      border-color: {STEEL} !important;
+  .var-table td {{ padding: 6px 10px; border-bottom: 1px solid #EDF2F7; }}
+  .var-table tr:nth-child(even) td {{ background: #F7FAFC; }}
+  .var-table td:first-child {{ font-weight: 600; color: {NAVY}; text-align: left; }}
+  .var-table td:not(:first-child) {{ text-align: right; }}
+  .pos {{ color: #27AE60; font-weight: 700; }}
+  .neg {{ color: {RED}; font-weight: 700; }}
+  .neu {{ color: #718096; }}
+
+  /* slicer label */
+  .slicer-label {{
+      font-size: .78rem; font-weight: 700; color: {NAVY};
+      text-transform: uppercase; letter-spacing: .5px;
+      margin-bottom: 6px;
   }}
 
-  /* hide streamlit branding */
   #MainMenu, footer {{ visibility: hidden; }}
   header[data-testid="stHeader"] {{ background: transparent; }}
+  .block-container {{ padding-top: 1rem !important; }}
 </style>
 """, unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────
-# CARGA DE DATOS
+# DATOS
 # ─────────────────────────────────────────────
 @st.cache_data(ttl=300)
-def load_data(path: str) -> pd.DataFrame:
+def load_data(path):
     df = pd.read_csv(path, parse_dates=["Fecha"])
-    df["Año_Mes"] = df["Fecha"].dt.to_period("M").astype(str)
-    df["Año"]     = df["Fecha"].dt.year
+    df["AñoMes"] = df["Fecha"].dt.to_period("M").astype(str)
     return df
 
-# Busca el CSV en la misma carpeta que app.py
-CSV_DEFAULT = os.path.join(os.path.dirname(__file__), "base_historica_acumulada.csv")
-
-if os.path.exists(CSV_DEFAULT):
-    df_raw = load_data(CSV_DEFAULT)
-else:
-    st.error("⚠️  No se encontró `base_historica_acumulada.csv` en la misma carpeta que `app.py`. "
-             "Ejecutá tu script de Python primero para generarlo.")
+CSV_PATH = os.path.join(os.path.dirname(__file__), "base_historica_acumulada.csv")
+if not os.path.exists(CSV_PATH):
+    st.error("No se encontró `base_historica_acumulada.csv`. Ejecutá el script de Python primero.")
     st.stop()
 
-# ─────────────────────────────────────────────
-# SIDEBAR — FILTROS
-# ─────────────────────────────────────────────
-with st.sidebar:
-    st.markdown(f"""
-    <div style='text-align:center; padding: 12px 0 20px;'>
-      <div style='font-size:1.3rem; font-weight:800; color:{GOLD};'>NOVUS AM</div>
-      <div style='font-size:.75rem; color:#A0AEC0;'>Middle Office · Contrapartes</div>
-    </div>
-    """, unsafe_allow_html=True)
-
-    st.markdown("### 🗓 Período")
-    fecha_min = df_raw["Fecha"].min().date()
-    fecha_max = df_raw["Fecha"].max().date()
-    fecha_desde, fecha_hasta = st.date_input(
-        "Rango de fechas",
-        value=(fecha_min, fecha_max),
-        min_value=fecha_min,
-        max_value=fecha_max,
-        label_visibility="collapsed",
-    )
-
-    st.markdown("### 🏦 Agente")
-    agentes_opts = sorted(df_raw["Agente"].unique())
-    agentes_sel  = st.multiselect("Agentes", agentes_opts, placeholder="Todos", label_visibility="collapsed")
-
-    st.markdown("### 📂 Asset")
-    assets_opts = sorted(df_raw["Asset_Category"].unique())
-    assets_sel  = st.multiselect("Assets", assets_opts, placeholder="Todos", label_visibility="collapsed")
-
-    st.markdown("### 💼 Fondo")
-    fondos_opts = sorted(df_raw["Fondo"].unique())
-    fondos_sel  = st.multiselect("Fondos", fondos_opts, placeholder="Todos", label_visibility="collapsed")
-
-    st.markdown("---")
-    top_n = st.slider("Top N agentes en gráficos", 5, 20, 10)
-
-# ─────────────────────────────────────────────
-# FILTRADO
-# ─────────────────────────────────────────────
-df = df_raw.copy()
-df = df[(df["Fecha"].dt.date >= fecha_desde) & (df["Fecha"].dt.date <= fecha_hasta)]
-if agentes_sel: df = df[df["Agente"].isin(agentes_sel)]
-if assets_sel:  df = df[df["Asset_Category"].isin(assets_sel)]
-if fondos_sel:  df = df[df["Fondo"].isin(fondos_sel)]
-
-if df.empty:
-    st.warning("No hay datos para los filtros seleccionados.")
-    st.stop()
+df_raw = load_data(CSV_PATH)
 
 # ─────────────────────────────────────────────
 # HEADER
 # ─────────────────────────────────────────────
+max_date = df_raw["Fecha"].max()
 st.markdown(f"""
-<div class="novus-header">
+<div class="pbi-header">
+  <div>📊</div>
   <div>
-    <h1>📊 Control & Flujo de Contrapartes</h1>
-    <p>NOVUS ASSET MANAGEMENT — Middle Office &nbsp;·&nbsp;
-       {fecha_desde.strftime('%d/%m/%Y')} → {fecha_hasta.strftime('%d/%m/%Y')}</p>
+    <h1>NOVUS ASSET MANAGEMENT — Control & Flujo de Contrapartes</h1>
+    <p>Middle Office · Agentes · Datos al {max_date.strftime('%d/%m/%Y')}</p>
   </div>
 </div>
 """, unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────
-# KPIs
+# SLICER  (Asset Category — en la parte superior para simplicidad)
 # ─────────────────────────────────────────────
-total_vol   = df["Volumen_USD"].sum()
-total_gas   = df["Gastos_USD"].sum()
-n_ops       = len(df)
-cost_bps    = (total_gas / total_vol * 10_000) if total_vol > 0 else 0
-top_ag      = df.groupby("Agente")["Volumen_USD"].sum().idxmax()
-top_ag_pct  = df.groupby("Agente")["Volumen_USD"].sum().max() / total_vol * 100
-n_agentes   = df["Agente"].nunique()
+col_slicer, col_dates = st.columns([3, 2])
+with col_slicer:
+    st.markdown('<div class="slicer-label">🔽 Filtrar por Asset Category</div>', unsafe_allow_html=True)
+    assets_all = sorted(df_raw["Asset_Category"].unique())
+    assets_sel = st.multiselect(
+        "asset", assets_all,
+        default=assets_all,
+        label_visibility="collapsed"
+    )
+with col_dates:
+    st.markdown('<div class="slicer-label">🗓 Período</div>', unsafe_allow_html=True)
+    fmin, fmax = df_raw["Fecha"].min().date(), df_raw["Fecha"].max().date()
+    fecha_rango = st.date_input("rango", value=(fmin, fmax),
+                                min_value=fmin, max_value=fmax,
+                                label_visibility="collapsed")
+
+st.markdown("---")
+
+# Aplicar filtros
+df = df_raw.copy()
+if len(fecha_rango) == 2:
+    df = df[(df["Fecha"].dt.date >= fecha_rango[0]) & (df["Fecha"].dt.date <= fecha_rango[1])]
+if assets_sel:
+    df = df[df["Asset_Category"].isin(assets_sel)]
+
+if df.empty:
+    st.warning("Sin datos para los filtros seleccionados.")
+    st.stop()
+
+# ─────────────────────────────────────────────
+# MÉTRICAS CALCULADAS
+# ─────────────────────────────────────────────
+max_d   = df["Fecha"].max()
+ytd_s   = pd.Timestamp(year=max_d.year, month=1, day=1)
+d30     = max_d - pd.Timedelta(days=30)
+d60     = max_d - pd.Timedelta(days=60)
+d365    = max_d - pd.Timedelta(days=365)
+prev30s = d30 - pd.Timedelta(days=30)
+
+vol_ytd     = df[df["Fecha"] >= ytd_s]["Volumen_USD"].sum()
+vol_30d     = df[df["Fecha"] >= d30]["Volumen_USD"].sum()
+vol_total   = df["Volumen_USD"].sum()
+
+# Asset dominante 30D
+asset_30d = df[df["Fecha"] >= d30].groupby("Asset_Category")["Volumen_USD"].sum()
+asset_dom = asset_30d.idxmax() if not asset_30d.empty else "—"
+asset_dom_pct = asset_30d.max() / asset_30d.sum() * 100 if not asset_30d.empty else 0
+
+# Agente líder (por volumen total)
+ag_vol = df.groupby("Agente")["Volumen_USD"].sum()
+agente_lider = ag_vol.idxmax() if not ag_vol.empty else "—"
+agente_lider_pct = ag_vol.max() / vol_total * 100 if vol_total > 0 else 0
+
+# Nivel concentración HHI (0-10000; <1500=baja, 1500-2500=media, >2500=alta)
+shares = (ag_vol / vol_total * 100) ** 2
+hhi = shares.sum()
+if hhi < 1500:   concentracion = f"Baja  ({hhi:,.0f})"
+elif hhi < 2500: concentracion = f"Media ({hhi:,.0f})"
+else:            concentracion = f"Alta  ({hhi:,.0f})"
+
+# Var% por asset y período
+def var_pct(df_all, asset, d_ini, d_fin, d_prev_ini, d_prev_fin):
+    curr = df_all[(df_all["Asset_Category"]==asset) & (df_all["Fecha"]>=d_ini) & (df_all["Fecha"]<=d_fin)]["Volumen_USD"].sum()
+    prev = df_all[(df_all["Asset_Category"]==asset) & (df_all["Fecha"]>=d_prev_ini) & (df_all["Fecha"]<=d_prev_fin)]["Volumen_USD"].sum()
+    if prev == 0: return None
+    return (curr - prev) / prev * 100
+
+rows_var = []
+for asset in sorted(df["Asset_Category"].unique()):
+    v30  = var_pct(df, asset, d30,  max_d, prev30s, d30)
+    v60  = var_pct(df, asset, d60,  max_d, d60 - pd.Timedelta(days=60), d60)
+    v365 = var_pct(df, asset, d365, max_d, d365 - pd.Timedelta(days=365), d365)
+    # YTD vs año anterior
+    ytd_prev_s = pd.Timestamp(year=max_d.year-1, month=1, day=1)
+    ytd_prev_e = pd.Timestamp(year=max_d.year-1, month=max_d.month, day=max_d.day)
+    vYTD = var_pct(df, asset, ytd_s, max_d, ytd_prev_s, ytd_prev_e)
+    rows_var.append({"Asset": asset, "30D": v30, "60D": v60, "365D": v365, "YTD": vYTD})
+
+df_var = pd.DataFrame(rows_var)
 
 def fmt_usd(v):
     if v >= 1e9:  return f"USD {v/1e9:,.2f}B"
     if v >= 1e6:  return f"USD {v/1e6:,.1f}M"
     return f"USD {v:,.0f}"
 
-k1, k2, k3, k4 = st.columns(4)
-with k1:
-    st.markdown(f"""<div class="kpi-card">
-      <div class="kpi-label">Volumen Total</div>
-      <div class="kpi-value">{fmt_usd(total_vol)}</div>
-      <div class="kpi-sub">{n_ops:,} operaciones</div>
+def fmt_pct(v):
+    if v is None or (isinstance(v, float) and np.isnan(v)):
+        return '<span class="neu">N/D</span>'
+    cls = "pos" if v >= 0 else "neg"
+    sign = "+" if v >= 0 else ""
+    return f'<span class="{cls}">{sign}{v:.1f}%</span>'
+
+# ─────────────────────────────────────────────
+# FILA 1: KPI CARDS (igual al PBI)
+# ─────────────────────────────────────────────
+c1, c2, c3, c4 = st.columns(4)
+
+with c1:
+    st.markdown(f"""<div class="kpi-wrap" style="border-left-color:{BLUE};">
+      <div class="kpi-title">Volumen YTD USD</div>
+      <div class="kpi-main">{fmt_usd(vol_ytd)}</div>
+      <div class="kpi-sub">Año {max_d.year} hasta hoy</div>
     </div>""", unsafe_allow_html=True)
 
-with k2:
-    st.markdown(f"""<div class="kpi-card">
-      <div class="kpi-label">Top Agente</div>
-      <div class="kpi-value" style="font-size:1.1rem;">{top_ag}</div>
-      <div class="kpi-sub">{top_ag_pct:.1f}% del volumen total</div>
+with c2:
+    st.markdown(f"""<div class="kpi-wrap" style="border-left-color:{GOLD};">
+      <div class="kpi-title">Asset Dominante 30D</div>
+      <div class="kpi-main" style="font-size:1.05rem;">{asset_dom}</div>
+      <div class="kpi-sub">{asset_dom_pct:.1f}% del vol. últimos 30 días</div>
     </div>""", unsafe_allow_html=True)
 
-with k3:
-    st.markdown(f"""<div class="kpi-card">
-      <div class="kpi-label">Gastos / Comisiones</div>
-      <div class="kpi-value">{fmt_usd(total_gas)}</div>
-      <div class="kpi-sub">Cost/Fee: {cost_bps:.1f} bps</div>
+with c3:
+    st.markdown(f"""<div class="kpi-wrap" style="border-left-color:{ORANGE};">
+      <div class="kpi-title">Agente Líder</div>
+      <div class="kpi-main" style="font-size:1.05rem;">{agente_lider}</div>
+      <div class="kpi-sub">{agente_lider_pct:.1f}% del volumen total</div>
     </div>""", unsafe_allow_html=True)
 
-with k4:
-    st.markdown(f"""<div class="kpi-card">
-      <div class="kpi-label">Contrapartes Activas</div>
-      <div class="kpi-value">{n_agentes}</div>
-      <div class="kpi-sub">de {df['Fondo'].nunique()} fondos operados</div>
+with c4:
+    color_hhi = "#27AE60" if hhi < 1500 else (GOLD if hhi < 2500 else RED)
+    st.markdown(f"""<div class="kpi-wrap" style="border-left-color:{color_hhi};">
+      <div class="kpi-title">Equidad por Contraparte</div>
+      <div class="kpi-main" style="font-size:1.1rem; color:{color_hhi};">{concentracion}</div>
+      <div class="kpi-sub">Índice HHI · &lt;1500 baja · &gt;2500 alta</div>
     </div>""", unsafe_allow_html=True)
 
 st.markdown("<br>", unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────
-# FILA 1: Top Agentes  |  Por Asset Category
+# FILA 2: Torta Agente | Tabla Var%
 # ─────────────────────────────────────────────
-col_left, col_right = st.columns([3, 2])
+col_izq, col_der = st.columns([55, 45])
 
-with col_left:
-    df_ag = (df.groupby("Agente")["Volumen_USD"]
-               .sum()
-               .sort_values(ascending=True)
-               .tail(top_n)
-               .reset_index())
-    df_ag["share"] = df_ag["Volumen_USD"] / total_vol * 100
-
-    fig_ag = go.Figure(go.Bar(
-        x=df_ag["Volumen_USD"],
-        y=df_ag["Agente"],
-        orientation="h",
-        marker_color=NAVY,
-        text=[f"  {fmt_usd(v)}  ({s:.1f}%)" for v, s in zip(df_ag["Volumen_USD"], df_ag["share"])],
-        textposition="outside",
-        textfont=dict(size=11, color=GRAY),
-    ))
-    fig_ag.update_layout(
-        title=dict(text=f"Top {top_n} Agentes por Volumen USD", font=dict(color=NAVY, size=14)),
-        xaxis=dict(showticklabels=False, showgrid=False),
-        yaxis=dict(tickfont=dict(size=11)),
-        plot_bgcolor="white",
-        paper_bgcolor="white",
-        margin=dict(l=10, r=120, t=40, b=10),
-        height=420,
+with col_izq:
+    # PIE CHART — Volumen por Agente (igual al PBI)
+    df_pie = df.groupby("Agente")["Volumen_USD"].sum().reset_index()
+    df_pie = df_pie.sort_values("Volumen_USD", ascending=False)
+    # Agrupar agentes pequeños en "Otros" (menos del 2%)
+    umbral = vol_total * 0.02
+    df_pie["Label"] = df_pie.apply(
+        lambda r: r["Agente"] if r["Volumen_USD"] >= umbral else "Otros", axis=1
     )
-    st.plotly_chart(fig_ag, use_container_width=True)
-
-with col_right:
-    df_asset = df.groupby("Asset_Category")["Volumen_USD"].sum().reset_index()
-    colors   = [PALETTE_ASSETS.get(a, "#888") for a in df_asset["Asset_Category"]]
+    df_pie_grouped = df_pie.groupby("Label")["Volumen_USD"].sum().reset_index()
 
     fig_pie = go.Figure(go.Pie(
-        labels=df_asset["Asset_Category"],
-        values=df_asset["Volumen_USD"],
-        hole=0.52,
-        marker=dict(colors=colors, line=dict(color="white", width=2)),
+        labels=df_pie_grouped["Label"],
+        values=df_pie_grouped["Volumen_USD"],
+        hole=0,
         textinfo="label+percent",
         textfont=dict(size=11),
+        marker=dict(line=dict(color="white", width=1.5)),
         insidetextorientation="radial",
     ))
     fig_pie.update_layout(
-        title=dict(text="Volumen por Asset Category", font=dict(color=NAVY, size=14)),
-        showlegend=False,
-        plot_bgcolor="white",
-        paper_bgcolor="white",
-        margin=dict(l=0, r=0, t=40, b=0),
-        height=420,
+        title=dict(text="Volumen USD por Agente", font=dict(color=NAVY, size=13, family="Segoe UI")),
+        showlegend=True,
+        legend=dict(font=dict(size=10), orientation="v", x=1, y=0.5),
+        plot_bgcolor="white", paper_bgcolor="white",
+        margin=dict(l=10, r=10, t=36, b=10),
+        height=320,
     )
     st.plotly_chart(fig_pie, use_container_width=True)
 
+with col_der:
+    # TABLA VAR% — réplica de la pivotTable del PBI
+    st.markdown(f"**Variación por Asset Category**", )
+
+    html_rows = ""
+    for _, row in df_var.iterrows():
+        html_rows += f"""<tr>
+          <td>{row['Asset']}</td>
+          <td>{fmt_pct(row['30D'])}</td>
+          <td>{fmt_pct(row['60D'])}</td>
+          <td>{fmt_pct(row['365D'])}</td>
+          <td>{fmt_pct(row['YTD'])}</td>
+        </tr>"""
+
+    st.markdown(f"""
+    <table class="var-table">
+      <thead><tr>
+        <th>Asset Category</th>
+        <th>Var % 30D</th>
+        <th>Var % 60D</th>
+        <th>Var % 365D</th>
+        <th>Var % YTD</th>
+      </tr></thead>
+      <tbody>{html_rows}</tbody>
+    </table>
+    """, unsafe_allow_html=True)
+
+st.markdown("<br>", unsafe_allow_html=True)
+
 # ─────────────────────────────────────────────
-# FILA 2: Evolución Mensual
+# FILA 3: Barras por Fondo | Línea mensual por Asset
 # ─────────────────────────────────────────────
-st.markdown(f"### 📈 Evolución Mensual")
+col_b1, col_b2 = st.columns([50, 50])
 
-tab1, tab2 = st.tabs(["Por Asset Category", "Top Agentes"])
+with col_b1:
+    # BAR CHART — Volumen por Fondo
+    df_fondo = df.groupby("Fondo")["Volumen_USD"].sum().reset_index()
+    df_fondo = df_fondo.sort_values("Volumen_USD", ascending=True)
 
-with tab1:
-    df_monthly_asset = (df.groupby(["Año_Mes", "Asset_Category"])["Volumen_USD"]
-                          .sum()
-                          .reset_index()
-                          .sort_values("Año_Mes"))
+    fig_bar = go.Figure(go.Bar(
+        x=df_fondo["Volumen_USD"],
+        y=df_fondo["Fondo"],
+        orientation="h",
+        marker_color=BLUE,
+        text=[fmt_usd(v) for v in df_fondo["Volumen_USD"]],
+        textposition="outside",
+        textfont=dict(size=10, color="#4A5568"),
+    ))
+    fig_bar.update_layout(
+        title=dict(text="Volumen USD por Fondo", font=dict(color=NAVY, size=13, family="Segoe UI")),
+        xaxis=dict(showticklabels=False, showgrid=False),
+        yaxis=dict(tickfont=dict(size=10)),
+        plot_bgcolor="white", paper_bgcolor="white",
+        margin=dict(l=10, r=90, t=36, b=10),
+        height=350,
+    )
+    st.plotly_chart(fig_bar, use_container_width=True)
 
-    fig_month = px.bar(
-        df_monthly_asset,
-        x="Año_Mes", y="Volumen_USD",
+with col_b2:
+    # LINE CHART — Evolución mensual por Asset Category
+    df_line = (df.groupby(["AñoMes", "Asset_Category"])["Volumen_USD"]
+                 .sum().reset_index().sort_values("AñoMes"))
+
+    fig_line = px.line(
+        df_line,
+        x="AñoMes", y="Volumen_USD",
         color="Asset_Category",
-        color_discrete_map=PALETTE_ASSETS,
-        barmode="stack",
-        labels={"Volumen_USD": "Volumen USD", "Año_Mes": "Mes", "Asset_Category": "Asset"},
-    )
-    fig_month.update_layout(
-        plot_bgcolor="white", paper_bgcolor="white",
-        xaxis=dict(title="", tickangle=-45),
-        yaxis=dict(title="Volumen USD", tickformat="$,.0f"),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-        margin=dict(t=20, b=60),
-        height=380,
-    )
-    st.plotly_chart(fig_month, use_container_width=True)
-
-with tab2:
-    top_agents_list = (df.groupby("Agente")["Volumen_USD"]
-                         .sum()
-                         .sort_values(ascending=False)
-                         .head(top_n)
-                         .index.tolist())
-    df_top_monthly = (df[df["Agente"].isin(top_agents_list)]
-                        .groupby(["Año_Mes", "Agente"])["Volumen_USD"]
-                        .sum()
-                        .reset_index()
-                        .sort_values("Año_Mes"))
-
-    fig_agents_month = px.line(
-        df_top_monthly,
-        x="Año_Mes", y="Volumen_USD", color="Agente",
+        color_discrete_map=ASSET_COLORS,
         markers=True,
-        labels={"Volumen_USD": "Volumen USD", "Año_Mes": "Mes"},
+        labels={"Volumen_USD": "Volumen USD", "AñoMes": "", "Asset_Category": "Asset"},
     )
-    fig_agents_month.update_layout(
+    fig_line.update_traces(line=dict(width=2), marker=dict(size=5))
+    fig_line.update_layout(
+        title=dict(text="Evolución Mensual por Asset Category", font=dict(color=NAVY, size=13, family="Segoe UI")),
         plot_bgcolor="white", paper_bgcolor="white",
-        xaxis=dict(title="", tickangle=-45),
-        yaxis=dict(title="Volumen USD", tickformat="$,.0f"),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-        margin=dict(t=20, b=60),
-        height=380,
+        xaxis=dict(tickangle=-45, tickfont=dict(size=9), showgrid=False),
+        yaxis=dict(tickformat="$,.0f", gridcolor="#EDF2F7"),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(size=10)),
+        margin=dict(l=10, r=10, t=50, b=50),
+        height=350,
     )
-    st.plotly_chart(fig_agents_month, use_container_width=True)
-
-# ─────────────────────────────────────────────
-# FILA 3: Tabla Resumen por Agente
-# ─────────────────────────────────────────────
-st.markdown("### 📋 Resumen por Agente")
-
-df_table = df.groupby("Agente").agg(
-    Volumen_Total=("Volumen_USD", "sum"),
-    Gastos_USD=("Gastos_USD", "sum"),
-    Operaciones=("Volumen_USD", "count"),
-).reset_index()
-
-# Períodos
-max_date  = df["Fecha"].max()
-ytd_start = pd.Timestamp(year=max_date.year, month=1, day=1)
-d30 = max_date - pd.Timedelta(days=30)
-
-vol_30d = df[df["Fecha"] >= d30].groupby("Agente")["Volumen_USD"].sum()
-vol_ytd = df[df["Fecha"] >= ytd_start].groupby("Agente")["Volumen_USD"].sum()
-
-df_table["Vol 30D USD"]   = df_table["Agente"].map(vol_30d).fillna(0)
-df_table["Vol YTD USD"]   = df_table["Agente"].map(vol_ytd).fillna(0)
-df_table["Share %"]       = df_table["Volumen_Total"] / total_vol * 100
-df_table["Cost/Fee (bps)"]= np.where(
-    df_table["Volumen_Total"] > 0,
-    df_table["Gastos_USD"] / df_table["Volumen_Total"] * 10_000, 0
-)
-df_table = df_table.sort_values("Volumen_Total", ascending=False).reset_index(drop=True)
-
-# Agrega fila TOTAL
-totals = {
-    "Agente": "TOTAL CONSOLIDADO",
-    "Volumen_Total":  df_table["Volumen_Total"].sum(),
-    "Gastos_USD":     df_table["Gastos_USD"].sum(),
-    "Operaciones":    df_table["Operaciones"].sum(),
-    "Vol 30D USD":    df_table["Vol 30D USD"].sum(),
-    "Vol YTD USD":    df_table["Vol YTD USD"].sum(),
-    "Share %":        df_table["Share %"].sum(),
-    "Cost/Fee (bps)": cost_bps,
-}
-df_display = pd.concat([df_table, pd.DataFrame([totals])], ignore_index=True)
-
-def style_table(df):
-    is_total = df.index == len(df) - 1
-    styles = pd.DataFrame("", index=df.index, columns=df.columns)
-    styles.loc[is_total, :] = f"background-color: {NAVY}; color: white; font-weight: bold;"
-    return styles
-
-st.dataframe(
-    df_display.style
-        .apply(style_table, axis=None)
-        .format({
-            "Volumen_Total":   "${:,.0f}",
-            "Gastos_USD":      "${:,.0f}",
-            "Vol 30D USD":     "${:,.0f}",
-            "Vol YTD USD":     "${:,.0f}",
-            "Share %":         "{:.2f}%",
-            "Cost/Fee (bps)":  "{:.1f}",
-        }),
-    use_container_width=True,
-    height=500,
-)
+    st.plotly_chart(fig_line, use_container_width=True)
 
 # ─────────────────────────────────────────────
 # FOOTER
 # ─────────────────────────────────────────────
 st.markdown(f"""
-<div style='text-align:center; color:#A0AEC0; font-size:.75rem; margin-top:40px; padding-bottom:20px;'>
-  NOVUS ASSET MANAGEMENT · Middle Office · Dashboard generado con Python + Streamlit<br>
-  Datos actualizados al {max_date.strftime('%d/%m/%Y')}
+<div style='text-align:center; color:#A0AEC0; font-size:.72rem; margin-top:24px; padding-bottom:16px;'>
+  NOVUS ASSET MANAGEMENT · Middle Office · Dashboard replicado desde Power BI ·
+  Datos al {max_date.strftime('%d/%m/%Y')}
 </div>
 """, unsafe_allow_html=True)
