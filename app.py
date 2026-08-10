@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 NOVUS ASSET MANAGEMENT — Dashboard de Contrapartes
-Versión Ultra-Optimizada
+Versión con Estilo Corporativo Personalizado (Dark/Green Tags)
 """
 
 import os
@@ -20,15 +20,16 @@ st.set_page_config(
 )
 
 # ─────────────────────────────────────────────
-# PALETA Y CONFIGURACIÓN BASE
+# PALETA DE COLOR CORPORATIVA NOVUS
 # ─────────────────────────────────────────────
 DARK_BG   = "#1A1C1A"
 GREEN     = "#5DBB63"
+GREEN_DIM = "#2D6A4F"
 LIGHT_BG  = "#F0F2F0"
 WHITE     = "#FFFFFF"
-GRAY_TEXT = "#777777"
+GRAY_TEXT = "#666666"
 DARK_TEXT = "#1A1C1A"
-BORDER    = "#E8EBE8"
+BORDER    = "#E2E8E2"
 
 ASSET_COLORS = {
     "Fixed Income":          "#2D6A4F",
@@ -40,25 +41,29 @@ ASSET_COLORS = {
     "CPD y Pagarés":         "#40916C",
 }
 
-FONT_FAMILY = "Arial, sans-serif"
+FONT_FAMILY = "'DM Sans', Arial, sans-serif"
 
 # ─────────────────────────────────────────────
-# CSS
+# CSS — OVERRIDE TOTAL DE COMPONENTES STREAMLIT
 # ─────────────────────────────────────────────
 st.markdown(f"""
 <style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&display=swap');
+
   html, body, .stApp {{
       font-family: {FONT_FAMILY} !important;
       background-color: {LIGHT_BG} !important;
   }}
+
+  /* ── HERO HEADER ── */
   .novus-hero {{
       background: linear-gradient(135deg, {DARK_BG} 0%, #162416 100%);
       padding: 28px 36px;
-      margin: -1rem -1rem 1rem -1rem;
+      margin: -1rem -1rem 1.2rem -1rem;
       border-radius: 0 0 12px 12px;
   }}
   .novus-eyebrow {{
-      font-size: .7rem; font-weight: 700; letter-spacing: 2px;
+      font-size: .68rem; font-weight: 700; letter-spacing: 2px;
       color: {GREEN}; text-transform: uppercase; margin-bottom: 6px;
   }}
   .novus-hero h1 {{
@@ -68,34 +73,101 @@ st.markdown(f"""
   .novus-hero p {{ color: #9AADA9; font-size: .85rem; margin: 4px 0 12px; }}
   .novus-badge {{
       display: inline-block; border: 1px solid rgba(93,187,99,.4);
-      border-radius: 20px; padding: 3px 10px; font-size: .75rem; color: {GREEN};
+      border-radius: 20px; padding: 3px 12px; font-size: .75rem; color: {GREEN}; font-weight: 500;
   }}
+
+  /* ── EXPANDER (FILTROS) ESTILO NOBLE ── */
+  div[data-testid="stExpander"] {{
+      background-color: {WHITE} !important;
+      border: 1px solid {BORDER} !important;
+      border-radius: 10px !important;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.03) !important;
+      margin-bottom: 1.2rem !important;
+      overflow: hidden;
+  }}
+  div[data-testid="stExpander"] summary {{
+      padding: 12px 20px !important;
+      font-weight: 600 !important;
+      color: {DARK_TEXT} !important;
+      font-size: .88rem !important;
+  }}
+  div[data-testid="stExpander"] summary:hover {{
+      color: {GREEN} !important;
+  }}
+
+  /* ── ELIMINAR EL ROJO DE STREAMLIT EN MULTISELECT ── */
+  /* Labels */
+  .stMultiSelect label {{
+      font-size: .68rem !important;
+      font-weight: 700 !important;
+      letter-spacing: 1px !important;
+      text-transform: uppercase !important;
+      color: {GRAY_TEXT} !important;
+      margin-bottom: 4px !important;
+  }}
+  /* Caja de entrada */
+  .stMultiSelect [data-baseweb="select"] > div {{
+      background-color: #FAFAFA !important;
+      border: 1px solid {BORDER} !important;
+      border-radius: 8px !important;
+      min-height: 40px !important;
+  }}
+  .stMultiSelect [data-baseweb="select"] > div:focus-within {{
+      border-color: {GREEN} !important;
+      box-shadow: 0 0 0 2px rgba(93, 187, 99, 0.15) !important;
+  }}
+  /* CÁPSULAS / TAGS SELECCIONADAS (Rojo -> Dark + Verde) */
+  .stMultiSelect [data-baseweb="tag"] {{
+      background-color: {DARK_BG} !important;
+      border: 1px solid rgba(93, 187, 99, 0.4) !important;
+      border-radius: 6px !important;
+      padding: 2px 8px !important;
+  }}
+  .stMultiSelect [data-baseweb="tag"] span {{
+      color: {GREEN} !important;
+      font-size: .75rem !important;
+      font-weight: 600 !important;
+  }}
+  /* Botón 'X' de borrar tag */
+  .stMultiSelect [data-baseweb="tag"] svg {{
+      fill: {GREEN} !important;
+  }}
+  .stMultiSelect [data-baseweb="tag"] button:hover {{
+      background-color: rgba(93, 187, 99, 0.2) !important;
+  }}
+
+  /* ── CARDS KPI ── */
   .kpi-card {{
-      background: {WHITE}; border-radius: 8px; padding: 14px 16px;
-      border: 1px solid {BORDER}; height: 100%;
+      background: {WHITE}; border-radius: 10px; padding: 16px 18px;
+      border: 1px solid {BORDER}; box-shadow: 0 1px 4px rgba(0,0,0,.02);
+      height: 100%;
   }}
   .kpi-label {{
-      font-size: .65rem; font-weight: 700; letter-spacing: 1px;
-      color: {GRAY_TEXT}; text-transform: uppercase; margin-bottom: 4px;
+      font-size: .65rem; font-weight: 700; letter-spacing: 1.2px;
+      color: {GRAY_TEXT}; text-transform: uppercase; margin-bottom: 6px;
   }}
-  .kpi-value {{ font-size: 1.6rem; font-weight: 700; color: {GREEN}; }}
-  .kpi-name {{ font-size: .9rem; font-weight: 600; color: {DARK_TEXT}; }}
-  .section-title {{ font-size: 1.1rem; font-weight: 700; color: {DARK_TEXT}; margin-top: 10px; }}
-  .section-underline {{ width: 28px; height: 3px; background: {GREEN}; margin-bottom: 14px; }}
+  .kpi-value {{ font-size: 1.65rem; font-weight: 700; color: {GREEN}; line-height: 1.1; }}
+  .kpi-name {{ font-size: .92rem; font-weight: 600; color: {DARK_TEXT}; line-height: 1.2; margin-bottom: 2px; }}
+  
+  /* ── SECCIONES Y TABLAS ── */
+  .section-title {{ font-size: 1.15rem; font-weight: 700; color: {DARK_TEXT}; margin-top: 6px; }}
+  .section-underline {{ width: 28px; height: 3px; background: {GREEN}; margin-bottom: 16px; border-radius: 2px; }}
+  
   .var-table {{ width:100%; border-collapse: collapse; font-size: .8rem; }}
-  .var-table th {{ font-size: .65rem; text-transform: uppercase; color: {GRAY_TEXT}; padding: 6px 8px; border-bottom: 2px solid {BORDER}; text-align: right; }}
+  .var-table th {{ font-size: .65rem; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: {GRAY_TEXT}; padding: 8px; border-bottom: 2px solid {BORDER}; text-align: right; }}
   .var-table th:first-child {{ text-align: left; }}
-  .var-table td {{ padding: 6px 8px; border-bottom: 1px solid {BORDER}; text-align: right; color: {DARK_TEXT}; }}
+  .var-table td {{ padding: 8px; border-bottom: 1px solid {BORDER}; text-align: right; color: {DARK_TEXT}; }}
   .var-table td:first-child {{ text-align: left; }}
   .pos {{ color: {GREEN}; font-weight: 700; }}
   .neg {{ color: #E05555; font-weight: 700; }}
+
   #MainMenu, footer, header {{ visibility: hidden; height: 0; }}
   .block-container {{ padding-top: 0 !important; padding-bottom: 1.5rem !important; }}
 </style>
 """, unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────
-# CARGA Y FILTRADO RÁPIDO DE DATOS
+# CARGA DE DATOS
 # ─────────────────────────────────────────────
 @st.cache_data(ttl=600)
 def load_data(path):
@@ -133,7 +205,7 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────
-# FILTROS DESPLEGABLES (OPTIMIZADOS)
+# FILTROS CON ESTILO CUSTOM NOVUS
 # ─────────────────────────────────────────────
 with st.expander("🔍 Filtrar datos (Vacío = Selecciona Todos)", expanded=False):
     f_col1, f_col2, f_col3, f_col4 = st.columns(4)
@@ -156,7 +228,7 @@ with st.expander("🔍 Filtrar datos (Vacío = Selecciona Todos)", expanded=Fals
         fondos_all = sorted(df_raw["Fondo"].unique())
         fondos_sel = st.multiselect("Fondo", fondos_all, placeholder="Todos los fondos")
 
-# Aplicar Filtros Efficiently
+# Aplicar Filtros
 df = df_raw.copy()
 if anos_sel:
     df = df[df["Año"].isin(anos_sel)]
@@ -168,11 +240,11 @@ if fondos_sel:
     df = df[df["Fondo"].isin(fondos_sel)]
 
 if df.empty:
-    st.warning("No hay datos para la combinación de filtros seleccionada.")
+    st.warning("No hay datos disponibles para la combinación de filtros seleccionada.")
     st.stop()
 
 # ─────────────────────────────────────────────
-# MÉTRICAS
+# MÉTRICAS Y CÁLCULOS
 # ─────────────────────────────────────────────
 max_d = df["Fecha"].max()
 ytd_s = pd.Timestamp(year=max_d.year, month=1, day=1)
@@ -217,7 +289,7 @@ with k4:
 st.markdown("<br>", unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────
-# SECCIÓN: TORTA + TABLA DE VARIACIÓN VECTORIAL
+# SECCIÓN: TORTA + TABLA VARIACIÓN
 # ─────────────────────────────────────────────
 st.markdown('<div class="section-title">Participación por Agente</div><div class="section-underline"></div>', unsafe_allow_html=True)
 
@@ -246,7 +318,6 @@ with col_pie:
 with col_var:
     st.markdown(f'<div style="font-size:.65rem; font-weight:700; text-transform:uppercase; color:{GRAY_TEXT}; margin-bottom:8px;">Variación por Asset Category</div>', unsafe_allow_html=True)
 
-    # Cálculo Vectorizado de Períodos (Súper Rápido)
     d60  = max_d - pd.Timedelta(days=60)
     d365 = max_d - pd.Timedelta(days=365)
 
@@ -287,7 +358,7 @@ with col_var:
 st.markdown("<br>", unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────
-# SECCIÓN: EVOLUCIÓN MENSUAL Y FONDO
+# SECCIÓN: BARRAS FONDO + LÍNEA ASSET
 # ─────────────────────────────────────────────
 st.markdown('<div class="section-title">Evolución Mensual</div><div class="section-underline"></div>', unsafe_allow_html=True)
 
