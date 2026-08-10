@@ -32,14 +32,16 @@ DARK_TEXT  = "#1A1C1A"
 BORDER     = "#E8EBE8"
 
 ASSET_COLORS = {
-    "Fixed Income":          "#5DBB63",
-    "Renta Variable":        "#A3D977",
-    "Licitaciones":          "#7EC8A0",
-    "Cauciones Colocadoras": "#4DA6FF",
-    "Pases Colocadores":     "#B8D4A8",
-    "Futuros":               "#FF6B6B",
-    "CPD y Pagarés":         "#FFD166",
+    "Fixed Income":          "#2D6A4F",   # verde oscuro
+    "Renta Variable":        "#5DBB63",   # verde principal
+    "Licitaciones":          "#95D5A0",   # verde claro
+    "Cauciones Colocadoras": "#1B4332",   # verde muy oscuro
+    "Pases Colocadores":     "#74C69D",   # verde menta
+    "Futuros":               "#B7E4C7",   # verde muy claro
+    "CPD y Pagarés":         "#40916C",   # verde medio
 }
+
+CHART_FONT = dict(family="'DM Sans', 'Helvetica Neue', Arial, sans-serif", color="#1A1C1A")
 
 # ─────────────────────────────────────────────
 # CSS — estilo Novus web
@@ -163,6 +165,54 @@ st.markdown(f"""
       border: 1px solid {BORDER}; border-radius: 20px;
       padding: 2px 10px; font-size: .65rem; font-weight: 600;
       letter-spacing: 1px; text-transform: uppercase; color: {GRAY_TEXT};
+  }}
+
+  /* ── MULTISELECT — eliminar rojo, reemplazar por dark+green ── */
+  .stMultiSelect [data-baseweb="tag"] {{
+      background-color: {DARK_BG} !important;
+      border: 1px solid rgba(93,187,99,.5) !important;
+      border-radius: 6px !important;
+  }}
+  .stMultiSelect [data-baseweb="tag"] span {{
+      color: {GREEN} !important;
+      font-size: .75rem !important;
+      font-weight: 500 !important;
+      letter-spacing: .3px;
+  }}
+  .stMultiSelect [data-baseweb="tag"] button svg {{
+      fill: {GREEN} !important;
+  }}
+  .stMultiSelect [data-baseweb="tag"] button:hover svg {{
+      fill: #FFFFFF !important;
+  }}
+  /* Dropdown del multiselect */
+  .stMultiSelect [data-baseweb="select"] > div {{
+      border-color: {BORDER} !important;
+      border-radius: 8px !important;
+      background: white !important;
+  }}
+  .stMultiSelect [data-baseweb="select"] > div:focus-within {{
+      border-color: {GREEN} !important;
+      box-shadow: 0 0 0 2px rgba(93,187,99,.2) !important;
+  }}
+
+  /* Date input — quitar rojo */
+  .stDateInput input {{
+      border-color: {BORDER} !important;
+      border-radius: 8px !important;
+  }}
+  .stDateInput input:focus {{
+      border-color: {GREEN} !important;
+      box-shadow: 0 0 0 2px rgba(93,187,99,.2) !important;
+  }}
+
+  /* Labels de filtros */
+  .stMultiSelect label, .stDateInput label {{
+      font-size: .65rem !important;
+      font-weight: 600 !important;
+      letter-spacing: 1.5px !important;
+      color: {GRAY_TEXT} !important;
+      text-transform: uppercase !important;
   }}
 
   /* ocultar branding streamlit */
@@ -350,17 +400,21 @@ with col_pie:
         hole=0.0,
         marker=dict(colors=colors_pie, line=dict(color="white", width=2)),
         textinfo="label+percent",
-        textfont=dict(size=11, family="DM Sans, Segoe UI, sans-serif"),
+        textfont=dict(size=11, family="'DM Sans', 'Helvetica Neue', Arial, sans-serif", color=WHITE),
         insidetextorientation="radial",
         hovertemplate="<b>%{label}</b><br>%{customdata}<extra></extra>",
         customdata=[fmt_usd(v) for v in df_pie_g["Volumen_USD"]],
     ))
     fig_pie.update_layout(
-        showlegend=False,
+        showlegend=True,
+        legend=dict(
+            font=dict(size=10, family="'DM Sans', 'Helvetica Neue', Arial, sans-serif", color=DARK_TEXT),
+            orientation="v", x=1, y=0.5,
+        ),
         plot_bgcolor="white", paper_bgcolor="white",
         margin=dict(l=10, r=10, t=10, b=10),
         height=360,
-        font=dict(family="DM Sans, Segoe UI, sans-serif"),
+        font=CHART_FONT,
     )
     st.plotly_chart(fig_pie, use_container_width=True)
 
@@ -444,14 +498,18 @@ with col_bar:
         marker_line_width=0,
         text=[fmt_usd(v) for v in df_fondo["Volumen_USD"]],
         textposition="outside",
-        textfont=dict(size=9, color=GRAY_TEXT),
+        textfont=dict(size=9, color=GRAY_TEXT,
+                      family="'DM Sans', 'Helvetica Neue', Arial, sans-serif"),
     ))
     fig_bar.update_layout(
-        title=dict(text="volumen por fondo", font=dict(size=12, color=DARK_TEXT, weight=400)),
+        title=dict(text="volumen por fondo",
+                   font=dict(size=12, color=DARK_TEXT,
+                             family="'DM Sans', 'Helvetica Neue', Arial, sans-serif")),
         plot_bgcolor="white", paper_bgcolor="white",
-        font=dict(family="DM Sans, Segoe UI, sans-serif"),
+        font=CHART_FONT,
         xaxis=dict(showticklabels=False, showgrid=False),
-        yaxis=dict(tickfont=dict(size=10, color=DARK_TEXT)),
+        yaxis=dict(tickfont=dict(size=10, color=DARK_TEXT,
+                                 family="'DM Sans', 'Helvetica Neue', Arial, sans-serif")),
         margin=dict(l=10, r=90, t=36, b=10),
         height=380,
     )
@@ -468,14 +526,22 @@ with col_line:
         markers=True,
         labels={"Volumen_USD":"", "AñoMes":"", "Asset_Category":""},
     )
-    fig_line.update_traces(line=dict(width=2), marker=dict(size=4))
+    fig_line.update_traces(line=dict(width=2.5), marker=dict(size=5))
     fig_line.update_layout(
-        title=dict(text="evolución mensual por asset", font=dict(size=12, color=DARK_TEXT, weight=400)),
+        title=dict(text="evolución mensual por asset",
+                   font=dict(size=12, color=DARK_TEXT,
+                             family="'DM Sans', 'Helvetica Neue', Arial, sans-serif")),
         plot_bgcolor="white", paper_bgcolor="white",
-        font=dict(family="DM Sans, Segoe UI, sans-serif"),
-        xaxis=dict(showgrid=False, tickangle=-40, tickfont=dict(size=9, color=GRAY_TEXT)),
-        yaxis=dict(gridcolor="#F0F2F0", tickformat="$,.0f", tickfont=dict(size=9, color=GRAY_TEXT)),
-        legend=dict(orientation="h", y=1.12, x=0, font=dict(size=9), title_text=""),
+        font=CHART_FONT,
+        xaxis=dict(showgrid=False, tickangle=-40,
+                   tickfont=dict(size=9, color=GRAY_TEXT,
+                                 family="'DM Sans', 'Helvetica Neue', Arial, sans-serif")),
+        yaxis=dict(gridcolor="#EDEFED", tickformat="$,.0f",
+                   tickfont=dict(size=9, color=GRAY_TEXT,
+                                 family="'DM Sans', 'Helvetica Neue', Arial, sans-serif")),
+        legend=dict(orientation="h", y=1.14, x=0,
+                    font=dict(size=9, family="'DM Sans', 'Helvetica Neue', Arial, sans-serif"),
+                    title_text=""),
         margin=dict(l=10, r=10, t=50, b=50),
         height=380,
     )
