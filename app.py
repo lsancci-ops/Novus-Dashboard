@@ -679,7 +679,7 @@ elif modulo == "📂 Apertura de Cuentas":
     st.title("📂 Onboarding y Seguimiento de Cuentas FCI")
     st.caption("Panel interactivo: editá celdas, cambiá estados o agregá filas directamente en la web")
 
-    EXCEL_PATH = "Seguimiento de Apertura de cuentas FCI  (1).xlsx"
+    EXCEL_PATH = "seguimiento_cuentas.xlsx"
 
     @st.cache_data
     def load_aperturas_raw():
