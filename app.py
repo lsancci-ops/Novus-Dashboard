@@ -32,9 +32,18 @@ st.set_page_config(
     page_title="novus | agentes",
     page_icon="📊",
     layout="wide",
-    initial_sidebar_state="collapsed",
+    initial_sidebar_state="expanded", # <--- Cambiado a expanded para ver la barra
 )
 
+# ── BARRA LATERAL DE NAVEGACIÓN ──
+modulo = st.sidebar.radio(
+    "Navegación",
+    ["📊 Dashboard de Contrapartes", "📂 Apertura de Cuentas"],
+    key="nav_modulo"
+)
+if modulo == "📊 Dashboard de Contrapartes":
+    # ACA DEJA TODO TU CODIGO ACTUAL TAL CUAL ESTA
+    # (Hero, Filtros, Metricas, Graficos, Ranking, Nota Metodológica y Footer)
 # ═══════════════════════════════════════════════════════════════
 # PALETA CORPORATIVA NOVUS
 # ═══════════════════════════════════════════════════════════════
@@ -1054,3 +1063,95 @@ st.markdown(f"""
     middle office · datos al {HIST_MAX:%d/%m/%Y} · {len(df_raw):,} operaciones en base</div>
 </div>
 """, unsafe_allow_html=True)
+elif modulo == "📂 Apertura de Cuentas":
+    st.title("📂 Onboarding y Seguimiento de Cuentas FCI")
+    st.caption("Panel interactivo: editá celdas, cambiá estados o agregá filas directamente en la web")
+
+    EXCEL_PATH = "Seguimiento de Apertura de cuentas FCI  (1).xlsx"
+
+    @st.cache_data
+    def load_aperturas_raw():
+        try:
+            df_c = pd.read_excel(EXCEL_PATH, sheet_name='Cuentas comitentes')
+            df_r = pd.read_excel(EXCEL_PATH, sheet_name='Cuentas remuneradas')
+            df_f = pd.read_excel(EXCEL_PATH, sheet_name='Lista FCI')
+            return df_c, df_r, df_f
+        except Exception as e:
+            st.error(f"Error al abrir el archivo Excel de cuentas: {e}")
+            return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+
+    df_com, df_rem, df_fci = load_aperturas_raw()
+
+    if not df_com.empty:
+        tot_com = len(df_com.dropna(subset=['Estado']))
+        tot_rem = len(df_rem.dropna(subset=['Estado']))
+        abiertas_com = (df_com['Estado'] == 'Abierta').sum()
+        abiertas_rem = (df_rem['Estado'] == 'Abierta').sum()
+        proc_com = (df_com['Estado'] == 'En proceso').sum()
+        proc_rem = (df_rem['Estado'] == 'En proceso').sum()
+
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Total Solicitudes", f"{tot_com + tot_rem:,}")
+        m2.metric("Cuentas Abiertas", f"{abiertas_com + abiertas_rem:,}")
+        m3.metric("En Proceso", f"{proc_com + proc_rem:,}", delta=f"-{proc_com + proc_rem}", delta_color="inverse")
+        m4.metric("Contrapartes", df_com['Contraparte'].nunique() + df_rem['Contraparte'].nunique())
+
+        st.markdown("---")
+
+        tab_edit_com, tab_edit_rem, tab_cnv = st.tabs([
+            "💼 Cuentas Comitentes (ALyCs)", 
+            "🏦 Cuentas Remuneradas (Bancos)", 
+            "📜 Mapeo FCI / CNV"
+        ])
+
+        with tab_edit_com:
+            st.subheader("✏️ Edición de Cuentas Comitentes (ALyCs)")
+            edited_com = st.data_editor(
+                df_com,
+                column_config={
+                    "Estado": st.column_config.SelectboxColumn("Estado", options=["Abierta", "En proceso"], required=True),
+                },
+                num_rows="dynamic",
+                use_container_width=True,
+                hide_index=True,
+                key="editor_comitentes"
+            )
+            if st.button("💾 Guardar Cambios en Comitentes"):
+                try:
+                    with pd.ExcelWriter(EXCEL_PATH, engine="openpyxl") as writer:
+                        edited_com.to_excel(writer, sheet_name='Cuentas comitentes', index=False)
+                        df_rem.to_excel(writer, sheet_name='Cuentas remuneradas', index=False)
+                        df_fci.to_excel(writer, sheet_name='Lista FCI', index=False)
+                    st.cache_data.clear()
+                    st.success("✅ ¡Cuentas comitentes actualizadas!")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Error al guardar: {e}")
+
+        with tab_edit_rem:
+            st.subheader("✏️ Edición de Cuentas Remuneradas (Bancos)")
+            edited_rem = st.data_editor(
+                df_rem,
+                column_config={
+                    "Estado": st.column_config.SelectboxColumn("Estado", options=["Abierta", "En proceso"], required=True),
+                },
+                num_rows="dynamic",
+                use_container_width=True,
+                hide_index=True,
+                key="editor_remuneradas"
+            )
+            if st.button("💾 Guardar Cambios en Remuneradas"):
+                try:
+                    with pd.ExcelWriter(EXCEL_PATH, engine="openpyxl") as writer:
+                        df_com.to_excel(writer, sheet_name='Cuentas comitentes', index=False)
+                        edited_rem.to_excel(writer, sheet_name='Cuentas remuneradas', index=False)
+                        df_fci.to_excel(writer, sheet_name='Lista FCI', index=False)
+                    st.cache_data.clear()
+                    st.success("✅ ¡Cuentas remuneradas actualizadas!")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Error al guardar: {e}")
+
+        with tab_cnv:
+            st.subheader("📜 Matrículas de Fondos en CNV")
+            st.dataframe(df_fci.dropna(subset=['Fondo']), use_container_width=True, hide_index=True)
