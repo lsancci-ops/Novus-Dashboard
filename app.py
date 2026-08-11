@@ -446,13 +446,16 @@ if AUTH_ACTIVA and not login_gate():
 # ═══════════════════════════════════════════════════════════════
 # NAVEGACIÓN
 # ═══════════════════════════════════════════════════════════════
-M_DASH = "Dashboard de contrapartes"
-M_CTAS = "Apertura de cuentas"
+M_DASH = "📊  Dashboard y métricas"
+M_CTAS = "📋  Seguimiento de apertura"
 
 st.sidebar.markdown(
     '<div class="sidebar-brand">novus <span>asset management</span></div>'
     '<div class="sidebar-tag">middle office</div>', unsafe_allow_html=True)
-modulo = st.sidebar.radio("Navegación", [M_DASH, M_CTAS], key="nav_modulo")
+
+# El label del radio hace de encabezado temático del grupo: el CSS del sidebar
+# lo pinta en verde, mayúsculas y con tracking, así queda como título de sección.
+modulo = st.sidebar.radio("Contrapartes", [M_DASH, M_CTAS], key="nav_modulo")
 
 # Recordatorio discreto del estado de acceso, al pie del sidebar.
 st.sidebar.markdown(
@@ -714,51 +717,116 @@ if modulo == M_CTAS:
     df_rem, av2 = _normalizar(df_rem, "Remuneradas")
     avisos = av1 + av2
 
-    # ── MÉTRICAS ────────────────────────────────────────────────────
+    # ── FILTROS ─────────────────────────────────────────────────────
+    TIPO_COM, TIPO_REM = "Comitente", "Remunerada"
+
+    def _valores(col, *frames):
+        """Valores únicos de una columna a través de varias hojas."""
+        vals = set()
+        for d in frames:
+            if d is not None and col in d.columns:
+                vals |= set(d[col].dropna().astype(str).str.strip())
+        vals.discard("")
+        return sorted(vals)
+
+    fondos_disp  = _valores("Fondo", df_com, df_rem)
+    estados_disp = [e for e in ESTADOS if e in set(_valores("Estado", df_com, df_rem))]
+    ctp_disp     = _valores("Contraparte", df_com, df_rem)
+
+    with st.expander("🔍  Filtros  ·  vacío = todos", expanded=True):
+        fc1, fc2, fc3, fc4 = st.columns(4)
+        with fc1:
+            f_tipo = st.multiselect("Tipo de cuenta", [TIPO_COM, TIPO_REM],
+                                    placeholder="Ambos", key="fc_tipo")
+        with fc2:
+            f_fondo = st.multiselect("Fondo", fondos_disp, placeholder="Todos", key="fc_fondo")
+        with fc3:
+            f_estado = st.multiselect("Estado", estados_disp, placeholder="Todos", key="fc_estado")
+        with fc4:
+            f_ctp = st.multiselect("Contraparte", ctp_disp, placeholder="Todas", key="fc_ctp")
+
+    ver_com = (not f_tipo) or (TIPO_COM in f_tipo)
+    ver_rem = (not f_tipo) or (TIPO_REM in f_tipo)
+    # Un filtro de fila activo obliga a bloquear agregar/borrar filas (ver más abajo).
+    filtro_filas = bool(f_fondo or f_estado or f_ctp)
+    filtro_activo = bool(f_tipo) or filtro_filas
+
+    sin_col = []
+
+    def filtrar(df, hoja):
+        """Filtra una hoja conservando el índice original (clave para guardar bien)."""
+        if df is None or df.empty:
+            return df
+        d = df
+        for col, sel in (("Fondo", f_fondo), ("Estado", f_estado), ("Contraparte", f_ctp)):
+            if not sel:
+                continue
+            if col not in d.columns:
+                sin_col.append(f"{hoja}: no tiene columna '{col}', el filtro no se le aplica")
+                continue
+            d = d[d[col].astype(str).str.strip().isin(sel)]
+        return d
+
+    vis_com = filtrar(df_com, "Comitentes") if ver_com else df_com.iloc[0:0]
+    vis_rem = filtrar(df_rem, "Remuneradas") if ver_rem else df_rem.iloc[0:0]
+
+    # ── MÉTRICAS (responden a los filtros) ──────────────────────────
     def _cuenta(df, estado):
-        if df is None or "Estado" not in df.columns:
+        if df is None or df.empty or "Estado" not in df.columns:
             return 0
         return int((df["Estado"] == estado).sum())
 
-    n_com = 0 if df_com is None else int(df_com.dropna(how="all").shape[0])
-    n_rem = 0 if df_rem is None else int(df_rem.dropna(how="all").shape[0])
-    abiertas = _cuenta(df_com, "Abierta") + _cuenta(df_rem, "Abierta")
-    proceso  = _cuenta(df_com, "En proceso") + _cuenta(df_rem, "En proceso")
-    total    = n_com + n_rem
+    def _filas(df):
+        return 0 if df is None or df.empty else int(df.dropna(how="all").shape[0])
+
+    n_com, n_rem = _filas(vis_com), _filas(vis_rem)
+    total = n_com + n_rem
+    abiertas = _cuenta(vis_com, "Abierta") + _cuenta(vis_rem, "Abierta")
+    proceso  = _cuenta(vis_com, "En proceso") + _cuenta(vis_rem, "En proceso")
     pct_ab   = (abiertas / total * 100) if total else 0.0
+    total_sin_filtro = _filas(df_com) + _filas(df_rem)
 
-    contrapartes = set()
-    for d in (df_com, df_rem):
-        if d is not None and "Contraparte" in d.columns:
-            contrapartes |= set(d["Contraparte"].dropna().astype(str).str.strip())
-    contrapartes.discard("")
+    contrapartes = set(_valores("Contraparte", vis_com, vis_rem))
+    fondos_vis = set(_valores("Fondo", vis_com, vis_rem))
 
-    st.markdown('<div class="section-title">Estado del Onboarding</div>'
+    titulo = "Estado del Onboarding"
+    if filtro_activo:
+        titulo += f" · {total} de {total_sin_filtro} solicitudes"
+    st.markdown(f'<div class="section-title">{titulo}</div>'
                 '<div class="section-underline"></div>', unsafe_allow_html=True)
+
+    if total == 0:
+        st.warning("Ninguna solicitud coincide con los filtros. Probá borrar alguno.")
 
     q1, q2, q3, q4 = st.columns(4)
     with q1:
-        st.markdown(f'<div class="kpi-card accent"><div class="kpi-label">Solicitudes totales</div>'
+        detalle = []
+        if ver_com:
+            detalle.append(f"{n_com} comitentes")
+        if ver_rem:
+            detalle.append(f"{n_rem} remuneradas")
+        st.markdown(f'<div class="kpi-card accent"><div class="kpi-label">Solicitudes</div>'
                     f'<div class="kpi-value">{total}</div>'
-                    f'<div class="kpi-sub">{n_com} comitentes · {n_rem} remuneradas</div></div>',
+                    f'<div class="kpi-sub">{" · ".join(detalle) or "—"}</div></div>',
                     unsafe_allow_html=True)
     with q2:
         st.markdown(f'<div class="kpi-card"><div class="kpi-label">Cuentas abiertas</div>'
                     f'<div class="kpi-value">{abiertas}</div>'
-                    f'<div class="kpi-sub">{pct_ab:.0f}% del total</div></div>', unsafe_allow_html=True)
+                    f'<div class="kpi-sub">{pct_ab:.0f}% de lo filtrado</div></div>',
+                    unsafe_allow_html=True)
     with q3:
         color = AMBER if proceso else GREEN
         st.markdown(f'<div class="kpi-card"><div class="kpi-label">En proceso</div>'
                     f'<div class="kpi-value" style="color:{color}">{proceso}</div>'
                     f'<div class="kpi-sub">pendientes de apertura</div></div>', unsafe_allow_html=True)
     with q4:
-        st.markdown(f'<div class="kpi-card"><div class="kpi-label">Contrapartes</div>'
-                    f'<div class="kpi-value">{len(contrapartes)}</div>'
-                    f'<div class="kpi-sub">ALyCs y bancos distintos</div></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="kpi-card"><div class="kpi-label">Alcance</div>'
+                    f'<div class="kpi-value">{len(contrapartes)} · {len(fondos_vis)}</div>'
+                    f'<div class="kpi-sub">contrapartes · fondos</div></div>', unsafe_allow_html=True)
 
-    # Barra de avance por estado
+    # ── AVANCE POR ESTADO ───────────────────────────────────────────
     if total:
-        est_tot = {e: _cuenta(df_com, e) + _cuenta(df_rem, e) for e in ESTADOS}
+        est_tot = {e: _cuenta(vis_com, e) + _cuenta(vis_rem, e) for e in ESTADOS}
         colores_est = {"Abierta": GREEN_DIM, "En proceso": AMBER,
                        "Rechazada": RED, "De baja": "#9AA5A0"}
         fig_est = go.Figure()
@@ -785,49 +853,159 @@ if modulo == M_CTAS:
         )
         chart(fig_est, key="estados")
 
-    if avisos:
-        st.markdown('<div class="note warn"><b>Revisar en el Excel:</b><br>' +
-                    "<br>".join(f"· {a}" for a in avisos) + '</div>', unsafe_allow_html=True)
+    # ── AVANCE POR FONDO (aparece cuando hay más de un fondo a la vista) ──
+    if len(fondos_vis) > 1:
+        filas_f = []
+        for fondo in sorted(fondos_vis):
+            ab = pr = tt = 0
+            for d in (vis_com, vis_rem):
+                if d is None or d.empty or "Fondo" not in d.columns:
+                    continue
+                sub = d[d["Fondo"].astype(str).str.strip() == fondo]
+                tt += len(sub)
+                if "Estado" in sub.columns:
+                    ab += int((sub["Estado"] == "Abierta").sum())
+                    pr += int((sub["Estado"] == "En proceso").sum())
+            filas_f.append((fondo, tt, ab, pr))
+        filas_f.sort(key=lambda r: r[1], reverse=True)
+        fig_f = go.Figure()
+        for nombre, color, idx in (("Abiertas", GREEN_DIM, 2), ("En proceso", AMBER, 3)):
+            fig_f.add_trace(go.Bar(
+                y=[r[0] for r in filas_f], x=[r[idx] for r in filas_f], orientation="h",
+                name=nombre, marker_color=color,
+                hovertemplate="<b>%{y}</b><br>" + nombre + ": %{x}<extra></extra>",
+            ))
+        fig_f.update_layout(
+            **BASE_LAYOUT, barmode="stack", height=max(190, 34 * len(filas_f) + 90),
+            legend=dict(orientation="h", y=-0.18, x=0, traceorder="normal",
+                        font=dict(size=9.5, family=FONT_FAMILY)),
+            xaxis=dict(gridcolor="#EDEFED", zeroline=False, dtick=1,
+                       tickfont=dict(size=9, color=GRAY_TEXT, family=FONT_FAMILY)),
+            yaxis=dict(autorange="reversed",
+                       tickfont=dict(size=10, color=DARK_TEXT, family=FONT_FAMILY)),
+            margin=dict(l=0, r=10, t=30, b=40),
+            title=dict(text="Cuentas por fondo", x=0, xanchor="left",
+                       font=dict(size=11.5, family=FONT_FAMILY, color=GRAY_TEXT)),
+        )
+        chart(fig_f, key="por_fondo")
 
-    # ── EDICIÓN ─────────────────────────────────────────────────────
-    st.markdown('<div class="section-title">Detalle Editable</div>'
+    if avisos or sin_col:
+        st.markdown('<div class="note warn"><b>Para revisar:</b><br>' +
+                    "<br>".join(f"· {a}" for a in (avisos + sorted(set(sin_col)))) +
+                    '</div>', unsafe_allow_html=True)
+
+    # ── TABLAS ──────────────────────────────────────────────────────
+    st.markdown('<div class="section-title">Detalle</div>'
                 '<div class="section-underline"></div>', unsafe_allow_html=True)
+
+    if filtro_filas and MODO_EDICION:
+        st.markdown(
+            '<div class="note"><b>Con filtros activos podés editar celdas, pero no agregar '
+            'ni borrar filas.</b> Es a propósito: al guardar, lo editado se vuelve a insertar '
+            'en su fila original del Excel y el resto queda intacto. Si necesitás sumar o quitar '
+            'filas, limpiá los filtros primero.</div>', unsafe_allow_html=True)
 
     cfg_estado = {
         "Estado": st.column_config.SelectboxColumn(
             "Estado", options=ESTADOS, required=False,
-            help="En proceso · Abierta · Rechazada · De baja"),
+            help=" · ".join(ESTADOS)),
     }
+    modo_filas = "fixed" if filtro_filas else "dynamic"
 
-    tab_com, tab_rem, tab_cnv = st.tabs(
-        ["  Comitentes (ALyCs)  ", "  Remuneradas (bancos)  ", "  Matrículas CNV  "])
+    # IMPORTANTE: se arranca con las hojas COMPLETAS. Si un editor no se
+    # renderiza (porque el filtro de tipo lo escondió), su hoja se guarda tal
+    # cual estaba, sin perder nada.
+    res_com, res_rem, res_fci = df_com, df_rem, df_fci
 
-    with tab_com:
-        st.markdown(f'<div class="chart-label">{n_com} solicitudes de cuenta comitente</div>',
-                    unsafe_allow_html=True)
-        ed_com = st.data_editor(
-            df_com, column_config=cfg_estado, num_rows="dynamic",
-            hide_index=True, key="ed_com", disabled=not MODO_EDICION)
+    nombres_tabs = []
+    if ver_com:
+        nombres_tabs.append("  Comitentes (ALyCs)  ")
+    if ver_rem:
+        nombres_tabs.append("  Remuneradas (bancos)  ")
+    nombres_tabs += ["  Vista consolidada  ", "  Matrículas CNV  "]
+    tabs = list(st.tabs(nombres_tabs))
+    t_idx = 0
 
-    with tab_rem:
-        st.markdown(f'<div class="chart-label">{n_rem} solicitudes de cuenta remunerada</div>',
-                    unsafe_allow_html=True)
-        ed_rem = st.data_editor(
-            df_rem, column_config=cfg_estado, num_rows="dynamic",
-            hide_index=True, key="ed_rem", disabled=not MODO_EDICION)
+    if ver_com:
+        with tabs[t_idx]:
+            st.markdown(f'<div class="chart-label">{n_com} cuentas comitentes</div>',
+                        unsafe_allow_html=True)
+            ed = st.data_editor(vis_com, column_config=cfg_estado, num_rows=modo_filas,
+                                hide_index=True, key="ed_com", disabled=not MODO_EDICION)
+            if filtro_filas:
+                # Reinserta lo editado en su posición original del Excel.
+                # .loc en vez de .update para que borrar una celda también se guarde.
+                base = df_com.copy()
+                if len(ed):
+                    base.loc[ed.index, ed.columns] = ed
+                res_com = base
+            else:
+                res_com = ed
+        t_idx += 1
 
-    with tab_cnv:
+    if ver_rem:
+        with tabs[t_idx]:
+            st.markdown(f'<div class="chart-label">{n_rem} cuentas remuneradas</div>',
+                        unsafe_allow_html=True)
+            ed = st.data_editor(vis_rem, column_config=cfg_estado, num_rows=modo_filas,
+                                hide_index=True, key="ed_rem", disabled=not MODO_EDICION)
+            if filtro_filas:
+                base = df_rem.copy()
+                if len(ed):
+                    base.loc[ed.index, ed.columns] = ed
+                res_rem = base
+            else:
+                res_rem = ed
+        t_idx += 1
+
+    # ── VISTA CONSOLIDADA: las dos hojas juntas, con columna Tipo ───
+    with tabs[t_idx]:
+        partes = []
+        for d, tipo in ((vis_com, TIPO_COM), (vis_rem, TIPO_REM)):
+            if d is None or d.empty:
+                continue
+            p = d.copy()
+            p.insert(0, "Tipo", tipo)
+            partes.append(p)
+        if partes:
+            cons = pd.concat(partes, ignore_index=True, sort=False)
+            primeras = [c for c in ("Tipo", "Contraparte", "Fondo", "Estado") if c in cons.columns]
+            cons = cons[primeras + [c for c in cons.columns if c not in primeras]]
+            st.markdown(f'<div class="chart-label">{len(cons)} cuentas · comitentes y '
+                        f'remuneradas en una sola tabla</div>', unsafe_allow_html=True)
+            df_show(cons, hide_index=True,
+                    height=int(min(460, 45 + 35 * max(len(cons), 1))))
+            st.download_button(
+                "⬇  Descargar vista filtrada (CSV)",
+                cons.to_csv(index=False).encode("utf-8-sig"),
+                file_name="novus_cuentas_filtrado.csv", mime="text/csv", key="dl_cons")
+            st.markdown('<div class="note">Esta vista es de solo lectura a propósito: mezcla las '
+                        'dos hojas, así que editar acá sería ambiguo. Para cambiar datos usá las '
+                        'pestañas de Comitentes o Remuneradas.</div>', unsafe_allow_html=True)
+        else:
+            st.info("Nada para mostrar con los filtros actuales.")
+    t_idx += 1
+
+    with tabs[t_idx]:
         st.markdown('<div class="chart-label">Matrículas de fondos en CNV</div>',
                     unsafe_allow_html=True)
-        ed_fci = st.data_editor(
-            df_fci, num_rows="dynamic", hide_index=True,
-            key="ed_fci", disabled=not MODO_EDICION)
+        vis_fci = df_fci
+        if f_fondo and df_fci is not None and "Fondo" in df_fci.columns:
+            vis_fci = df_fci[df_fci["Fondo"].astype(str).str.strip().isin(f_fondo)]
+        ed_fci = st.data_editor(vis_fci, num_rows="fixed" if f_fondo else "dynamic",
+                                hide_index=True, key="ed_fci", disabled=not MODO_EDICION)
+        if f_fondo and df_fci is not None:
+            base = df_fci.copy()
+            if len(ed_fci):
+                base.loc[ed_fci.index, ed_fci.columns] = ed_fci
+            res_fci = base
+        else:
+            res_fci = ed_fci
 
     # ── GUARDADO ÚNICO ──────────────────────────────────────────────
-    # Un solo botón que escribe las TRES hojas con lo que hay en los tres
-    # editores. Tener un botón por pestaña hacía que guardar en una pisara
-    # lo editado en la otra: el handler corre antes de que exista la
-    # variable del editor siguiente.
+    # Un solo botón que escribe las TRES hojas completas. Tener un botón por
+    # pestaña hacía que guardar en una pisara lo editado en la otra: el handler
+    # corre antes de que exista la variable del editor siguiente.
     if MODO_EDICION:
         st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
         g1, g2, g3 = st.columns([1.4, 1, 3])
@@ -844,9 +1022,9 @@ if modulo == M_CTAS:
                 try:
                     buf = io.BytesIO()
                     with pd.ExcelWriter(buf, engine="openpyxl") as w:
-                        ed_com.to_excel(w, sheet_name=HOJA_COM, index=False)
-                        ed_rem.to_excel(w, sheet_name=HOJA_REM, index=False)
-                        ed_fci.to_excel(w, sheet_name=HOJA_FCI, index=False)
+                        res_com.to_excel(w, sheet_name=HOJA_COM, index=False)
+                        res_rem.to_excel(w, sheet_name=HOJA_REM, index=False)
+                        res_fci.to_excel(w, sheet_name=HOJA_FCI, index=False)
                     sello = pd.Timestamp.now().strftime("%Y-%m-%d %H:%M")
                     ok, err = _subir_excel(
                         buf.getvalue(), sha_actual,
@@ -854,8 +1032,9 @@ if modulo == M_CTAS:
                     if ok:
                         cargar_cuentas.clear()
                         st.session_state["_cuentas_nonce"] = nonce + 1
-                        st.success(f"Guardado en la rama '{GH_BRANCH}' del repo. "
-                                   f"Queda el registro del cambio a nombre de {iniciales.strip().upper()}.")
+                        st.success(f"Guardado en la rama '{GH_BRANCH}' del repo, a nombre de "
+                                   f"{iniciales.strip().upper()}. Las filas que el filtro no mostraba "
+                                   f"quedaron intactas.")
                         st.rerun()
                     else:
                         st.error(err)
@@ -864,9 +1043,10 @@ if modulo == M_CTAS:
 
         st.markdown(
             f'<div class="note" style="margin-top:10px">Cada guardado hace un commit en la rama '
-            f'<code>{GH_BRANCH}</code> del repo privado, con tus iniciales y la fecha. Si dos personas '
-            f'editan a la vez, el segundo guardado se rechaza con aviso en lugar de pisar el del otro. '
-            f'El historial completo queda en GitHub → rama <code>{GH_BRANCH}</code> → History.</div>',
+            f'<code>{GH_BRANCH}</code> del repo privado, con tus iniciales y la fecha. Se escriben '
+            f'siempre las tres hojas completas, filtres o no. Si dos personas editan a la vez, el '
+            f'segundo guardado se rechaza con aviso en lugar de pisar el del otro. El historial queda '
+            f'en GitHub → rama <code>{GH_BRANCH}</code> → History.</div>',
             unsafe_allow_html=True)
 
     # ── FOOTER ──────────────────────────────────────────────────────
