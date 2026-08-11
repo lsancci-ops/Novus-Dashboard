@@ -383,6 +383,13 @@ def _clave_configurada():
     return os.environ.get("NOVUS_APP_PASSWORD") or None
 
 
+# La contraseña es OPCIONAL y se activa sola.
+#   · Si NO hay `app_password` en los Secrets  → la app abre directo, sin pedir nada.
+#   · Si algún día se agrega `app_password`    → la pantalla de login se activa
+#     automáticamente en el próximo reinicio, sin tocar una línea de código.
+AUTH_ACTIVA = bool(_clave_configurada())
+
+
 def login_gate():
     """Devuelve True solo si el visitante ingresó la contraseña correcta."""
     if st.session_state.get("_auth_ok"):
@@ -431,8 +438,9 @@ def login_gate():
     return False
 
 
-# Nada de lo que sigue (ni la lectura del CSV) se ejecuta sin autenticación.
-if not login_gate():
+# Con contraseña configurada, nada de lo que sigue (ni la lectura del CSV) se
+# ejecuta sin autenticar. Sin contraseña configurada, la app abre normalmente.
+if AUTH_ACTIVA and not login_gate():
     st.stop()
 
 # ═══════════════════════════════════════════════════════════════
@@ -445,6 +453,16 @@ st.sidebar.markdown(
     '<div class="sidebar-brand">novus <span>asset management</span></div>'
     '<div class="sidebar-tag">middle office</div>', unsafe_allow_html=True)
 modulo = st.sidebar.radio("Navegación", [M_DASH, M_CTAS], key="nav_modulo")
+
+# Recordatorio discreto del estado de acceso, al pie del sidebar.
+st.sidebar.markdown(
+    '<div style="margin-top:22px;padding-top:12px;border-top:1px solid rgba(255,255,255,.08)">'
+    + ('<div style="font-size:.68rem;color:#7A857D">acceso · <span style="color:#5DBB63">'
+       'protegido con contraseña</span></div>'
+       if AUTH_ACTIVA else
+       '<div style="font-size:.68rem;color:#7A857D">acceso · <span style="color:#E8A020">'
+       'sin contraseña</span><br><span style="font-size:.62rem">quien tenga el link entra</span></div>')
+    + '</div>', unsafe_allow_html=True)
 
 # ═══════════════════════════════════════════════════════════════
 # Se resuelve el módulo 2 primero y se corta con st.stop(), así el
@@ -852,12 +870,14 @@ if modulo == M_CTAS:
             unsafe_allow_html=True)
 
     # ── FOOTER ──────────────────────────────────────────────────────
-    _, col_out2 = st.columns([5, 1])
-    with col_out2:
-        if st.button("Cerrar sesión", key="logout2"):
-            for k in ("_auth_ok", "_intentos"):
-                st.session_state.pop(k, None)
-            st.rerun()
+    # El botón de salir solo tiene sentido si hay contraseña configurada.
+    if AUTH_ACTIVA:
+        _, col_out2 = st.columns([5, 1])
+        with col_out2:
+            if st.button("Cerrar sesión", key="logout2"):
+                for k in ("_auth_ok", "_intentos"):
+                    st.session_state.pop(k, None)
+                st.rerun()
 
     st.markdown(f"""
     <div style="background:{DARK_BG}; margin: 1rem -1rem -1rem -1rem; padding: 16px 36px;
@@ -1646,12 +1666,14 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-_, col_out = st.columns([5, 1])
-with col_out:
-    if st.button("Cerrar sesión", key="logout"):
-        for k in ("_auth_ok", "_intentos"):
-            st.session_state.pop(k, None)
-        st.rerun()
+# El botón de salir solo tiene sentido si hay contraseña configurada.
+if AUTH_ACTIVA:
+    _, col_out = st.columns([5, 1])
+    with col_out:
+        if st.button("Cerrar sesión", key="logout"):
+            for k in ("_auth_ok", "_intentos"):
+                st.session_state.pop(k, None)
+            st.rerun()
 
 st.markdown(f"""
 <div style="background:{DARK_BG}; margin: 1rem -1rem -1rem -1rem; padding: 16px 36px;
