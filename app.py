@@ -756,6 +756,73 @@ if modulo == M_CTAS:
             s = s.replace(ic, "")
         return s.strip() or None
 
+    # ═══════════════════════════════════════════════════════════════
+    # CATÁLOGO DE FCI
+    # La hoja "Lista FCI" es la fuente de verdad de qué fondos existen.
+    # Su columna de nombre se normaliza a "FCI" para que sea igual que en
+    # las hojas de cuentas. De ahí salen las opciones de los desplegables.
+    # ═══════════════════════════════════════════════════════════════
+    import difflib
+    import re
+    import unicodedata
+
+    COL_FCI_CAT = _primera_col(CAND_FONDO, df_fci)
+    if df_fci is not None and COL_FCI_CAT and COL_FCI_CAT != "FCI":
+        df_fci = df_fci.rename(columns={COL_FCI_CAT: "FCI"})
+        COL_FCI_CAT = "FCI"
+
+    CATALOGO = []
+    if df_fci is not None and "FCI" in df_fci.columns:
+        vistos = set()
+        for v in df_fci["FCI"].dropna().astype(str).str.strip():
+            if v and v not in vistos:      # conserva el orden de la hoja
+                vistos.add(v)
+                CATALOGO.append(v)
+
+    def _norm_fci(s):
+        """Clave de comparación: sin acentos, sin mayúsculas, sin puntuación
+        y sin el sufijo 'FCI'. Así 'Novus liquidez FCI', 'NOVUS LIQUIDEZ' y
+        'Novus  Liquidez' colapsan todas a la misma clave."""
+        s = str(s).strip().lower()
+        s = unicodedata.normalize("NFKD", s)
+        s = "".join(ch for ch in s if not unicodedata.combining(ch))
+        s = re.sub(r"\bf\.?c\.?i\.?\b", " ", s)
+        s = re.sub(r"[^a-z0-9 ]", " ", s)
+        return re.sub(r"\s+", " ", s).strip()
+
+    SIN_TOCAR = "— dejar como está —"
+
+    IDX_CAT = {}
+    for c in CATALOGO:
+        IDX_CAT.setdefault(_norm_fci(c), c)
+
+    def _sugerir_fci(valor):
+        """Devuelve (canónico, etiqueta, ratio). Nunca decide sola: el ratio
+        se muestra en pantalla para que la persona confirme."""
+        n = _norm_fci(valor)
+        if not n:
+            return None, "vacío", 0.0
+        if n in IDX_CAT:
+            return IDX_CAT[n], "exacta", 1.0
+        cerca = difflib.get_close_matches(n, list(IDX_CAT), n=1, cutoff=0.78)
+        if cerca:
+            r = difflib.SequenceMatcher(None, n, cerca[0]).ratio()
+            return IDX_CAT[cerca[0]], f"{r:.0%}", r
+        return None, "sin match", 0.0
+
+    # Unificaciones confirmadas en esta sesión, aplicadas antes de mostrar.
+    if "mapa_fci" not in st.session_state:
+        st.session_state["mapa_fci"] = {}
+
+    def _aplicar_mapa(df):
+        mapa = st.session_state.get("mapa_fci") or {}
+        if df is None or df.empty or not mapa or COL_FONDO not in (df.columns if df is not None else []):
+            return df
+        d = df.copy()
+        d[COL_FONDO] = d[COL_FONDO].map(
+            lambda v: mapa.get(str(v).strip(), v) if pd.notna(v) else v)
+        return d
+
     def a_vista(df):
         """Copia con el Estado decorado, para mostrar en el editor."""
         if df is None or df.empty or "Estado" not in df.columns:
@@ -850,8 +917,8 @@ if modulo == M_CTAS:
             return df
         return pd.concat([df, pd.DataFrame(pend)], ignore_index=True, sort=False)
 
-    df_com = _sumar_nuevas(df_com, "com")
-    df_rem = _sumar_nuevas(df_rem, "rem")
+    df_com = _aplicar_mapa(_sumar_nuevas(df_com, "com"))
+    df_rem = _aplicar_mapa(_sumar_nuevas(df_rem, "rem"))
     n_pendientes = (len(st.session_state["nuevas_ctas"]["com"]) +
                     len(st.session_state["nuevas_ctas"]["rem"]))
 
@@ -1038,6 +1105,12 @@ if modulo == M_CTAS:
                             if nombre_col == "Estado":
                                 valores[nombre_col] = st.selectbox(
                                     nombre_col, ESTADOS, index=0)
+                            elif COL_FONDO and nombre_col == COL_FONDO and CATALOGO:
+                                # Desplegable con el catálogo: así no nacen
+                                # variantes nuevas del mismo fondo.
+                                valores[nombre_col] = st.selectbox(
+                                    nombre_col, CATALOGO, index=None,
+                                    placeholder="Elegí un FCI de la lista")
                             elif COL_TIPO and nombre_col == COL_TIPO:
                                 st.text_input(nombre_col, value=alta_tipo, disabled=True)
                                 valores[nombre_col] = alta_tipo
@@ -1071,8 +1144,22 @@ if modulo == M_CTAS:
             "Estado", options=ESTADOS_VIS, required=False, width="medium",
             help="Elegí el estado de la lista"),
     }
+    # El FCI pasa a desplegable SOLO cuando todos los valores ya están en el
+    # catálogo. Si quedan variantes sueltas, un SelectboxColumn las tomaría
+    # como inválidas y podría vaciarlas: se deja como texto hasta unificar.
+    fci_sueltos = set()
+    if COL_FONDO and CATALOGO:
+        for d in (df_com, df_rem):
+            if d is not None and not d.empty and COL_FONDO in d.columns:
+                fci_sueltos |= {v for v in d[COL_FONDO].dropna().astype(str).str.strip()
+                                if v and v not in CATALOGO}
     if COL_FONDO:
-        cfg[COL_FONDO] = st.column_config.TextColumn(COL_FONDO, width="medium")
+        if CATALOGO and not fci_sueltos:
+            cfg[COL_FONDO] = st.column_config.SelectboxColumn(
+                COL_FONDO, options=CATALOGO, required=False, width="medium",
+                help="Elegí un FCI del catálogo")
+        else:
+            cfg[COL_FONDO] = st.column_config.TextColumn(COL_FONDO, width="medium")
     modo_filas = "fixed" if filtro_filas else "dynamic"
 
     # Se arranca con las hojas COMPLETAS: si un editor no se renderiza porque
@@ -1084,7 +1171,11 @@ if modulo == M_CTAS:
         nombres.append("  Comitentes (ALyCs)  ")
     if ver_rem:
         nombres.append("  Remuneradas (bancos)  ")
-    nombres += ["  Vista consolidada  ", f"  Matrículas CNV  "]
+    nombres += ["  Vista consolidada  ", "  FCI y matrículas  "]
+    # La pestaña de unificación aparece SOLO si hay algo que unificar, y se
+    # va sola cuando el catálogo queda limpio.
+    if fci_sueltos:
+        nombres.append(f"  ⚠ Unificar FCI ({len(fci_sueltos)})  ")
     tabs = list(st.tabs(nombres))
     k = 0
 
@@ -1163,22 +1254,111 @@ if modulo == M_CTAS:
             st.info("Nada para mostrar con los filtros actuales.")
     k += 1
 
+    # ── CATÁLOGO DE FCI (acá se dan de alta los fondos nuevos) ──────
     with tabs[k]:
-        st.markdown('<div class="chart-label">Matrículas de fondos en CNV</div>',
-                    unsafe_allow_html=True)
+        st.markdown(f'<div class="chart-label">{len(CATALOGO)} FCI en el catálogo · '
+                    f'esta lista alimenta todos los desplegables</div>', unsafe_allow_html=True)
         vis_fci = df_fci
-        col_fci_hoja = _primera_col(CAND_FONDO, df_fci)
-        if f_fondo and col_fci_hoja:
-            vis_fci = df_fci[df_fci[col_fci_hoja].astype(str).str.strip().isin(f_fondo)]
+        if f_fondo and df_fci is not None and "FCI" in df_fci.columns:
+            vis_fci = df_fci[df_fci["FCI"].astype(str).str.strip().isin(f_fondo)]
         ed_fci = st.data_editor(vis_fci, num_rows="fixed" if f_fondo else "dynamic",
                                 hide_index=True, key="ed_fci")
-        if f_fondo and col_fci_hoja and df_fci is not None:
+        if f_fondo and df_fci is not None and "FCI" in df_fci.columns:
             base = df_fci.copy()
             if len(ed_fci):
                 base.loc[ed_fci.index, ed_fci.columns] = ed_fci
             res_fci = base
         else:
             res_fci = ed_fci
+
+        st.markdown(
+            '<div class="note"><b>Acá se da de alta un FCI nuevo.</b> Escribilo en la última '
+            'fila vacía junto con su número de CNV y guardá. Desde ese momento aparece en el '
+            'desplegable de FCI del alta de cuentas y en el filtro. Es la única puerta de '
+            'entrada de fondos nuevos, y por eso los nombres se mantienen unificados. '
+            'Ojo con los repetidos: si un fondo figura dos veces con distinto nombre, van a '
+            'convivir como si fueran dos.</div>', unsafe_allow_html=True)
+
+        # Duplicados dentro del propio catálogo (mismo fondo, distinta escritura)
+        if CATALOGO:
+            por_clave = {}
+            for nombre in CATALOGO:
+                por_clave.setdefault(_norm_fci(nombre), []).append(nombre)
+            repes = {k2: v for k2, v in por_clave.items() if len(v) > 1}
+            if repes:
+                detalle = " · ".join(" = ".join(v) for v in repes.values())
+                st.markdown(f'<div class="note warn"><b>El catálogo tiene nombres repetidos:</b> '
+                            f'{detalle}. Conviene dejar uno solo.</div>', unsafe_allow_html=True)
+    k += 1
+
+    # ── UNIFICAR NOMBRES DE FCI ─────────────────────────────────────
+    if fci_sueltos:
+        with tabs[k]:
+            st.markdown(f'<div class="chart-label">{len(fci_sueltos)} nombres de FCI que no '
+                        f'están en el catálogo</div>', unsafe_allow_html=True)
+            st.markdown(
+                '<div class="note warn"><b>Revisá una por una antes de aplicar.</b> La sugerencia '
+                'automática compara ignorando acentos, mayúsculas, espacios de más y el sufijo '
+                '"FCI". Las <b>exactas</b> vienen ya elegidas. Las que son solo <i>parecidas</i> '
+                'quedan sin elegir a propósito: en las pruebas, "Novus Gestion 2" se parecía más a '
+                '"Novus Gestión" que a "Novus Gestion II", así que decidir sola sería peligroso.'
+                '</div>', unsafe_allow_html=True)
+
+            filas_uni = []
+            for valor in sorted(fci_sueltos):
+                sug, etiqueta, ratio = _sugerir_fci(valor)
+                n_filas = 0
+                for d in (df_com, df_rem):
+                    if d is not None and not d.empty and COL_FONDO in d.columns:
+                        n_filas += int((d[COL_FONDO].astype(str).str.strip() == valor).sum())
+                # Solo se pre-elige lo exacto o casi idéntico (typos).
+                elegido = sug if (ratio >= 0.95 and sug) else SIN_TOCAR
+                filas_uni.append({"Nombre actual": valor, "Filas": n_filas,
+                                  "Coincidencia": etiqueta,
+                                  "Sugerencia": sug or "—", "Unificar con": elegido})
+            df_uni = pd.DataFrame(filas_uni).sort_values(
+                ["Filas"], ascending=False).reset_index(drop=True)
+
+            ed_uni = st.data_editor(
+                df_uni, hide_index=True, num_rows="fixed", key="ed_uni",
+                height=int(min(430, 45 + 35 * max(len(df_uni), 1))),
+                disabled=["Nombre actual", "Filas", "Coincidencia", "Sugerencia"],
+                column_config={
+                    "Nombre actual": st.column_config.TextColumn("Nombre actual", width="medium"),
+                    "Filas": st.column_config.NumberColumn("Filas", width="small"),
+                    "Coincidencia": st.column_config.TextColumn("Coincidencia", width="small"),
+                    "Sugerencia": st.column_config.TextColumn("Sugerencia", width="medium"),
+                    "Unificar con": st.column_config.SelectboxColumn(
+                        "Unificar con", options=[SIN_TOCAR] + CATALOGO,
+                        required=False, width="medium"),
+                })
+
+            a_cambiar = {}
+            filas_afectadas = 0
+            for _, r in ed_uni.iterrows():
+                destino_fci = r.get("Unificar con")
+                if destino_fci and destino_fci != SIN_TOCAR and destino_fci != r["Nombre actual"]:
+                    a_cambiar[str(r["Nombre actual"])] = str(destino_fci)
+                    filas_afectadas += int(r["Filas"] or 0)
+
+            c_uni1, c_uni2 = st.columns([1.3, 3])
+            with c_uni1:
+                aplicar = st.button(f"🔗  Unificar {len(a_cambiar)} nombre(s)",
+                                    key="btn_uni", disabled=not a_cambiar)
+            with c_uni2:
+                if a_cambiar:
+                    st.markdown(f'<div class="note">Va a reescribir <b>{filas_afectadas} filas</b>. '
+                                f'El cambio se ve en las tablas al instante, pero recién queda '
+                                f'firme cuando apretás <b>Guardar cambios</b>.</div>',
+                                unsafe_allow_html=True)
+            if aplicar:
+                st.session_state["mapa_fci"].update(a_cambiar)
+                st.rerun()
+    else:
+        if CATALOGO:
+            st.markdown('<div class="note" style="margin-top:8px">✅ Todos los FCI de las cuentas '
+                        'coinciden con el catálogo, así que la columna FCI es un desplegable y no '
+                        'se pueden escribir variantes nuevas.</div>', unsafe_allow_html=True)
 
     # ── GUARDAR ─────────────────────────────────────────────────────
     # Un solo botón escribe las TRES hojas completas. Un botón por pestaña
