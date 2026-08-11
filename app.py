@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-NOVUS ASSET MANAGEMENT — Dashboard de Contrapartes / Middle Office & Onboarding
-================================================================================
-v3.1 — Multi-módulo: Dashboard de Flujo + Gestión Editable de Cuentas FCI
+NOVUS ASSET MANAGEMENT — Dashboard de Contrapartes & Onboarding de Cuentas
+===========================================================================
+v3.1 — Multi-módulo: Control de Flujo + Gestión Editable de Cuentas FCI
 """
 
 import os
@@ -33,7 +33,6 @@ modulo = st.sidebar.radio(
 # ═══════════════════════════════════════════════════════════════
 if modulo == "📊 Dashboard de Contrapartes":
 
-    # ── PALETA CORPORATIVA NOVUS ──
     DARK_BG   = "#1A1C1A"
     GREEN     = "#5DBB63"
     GREEN_DIM = "#2D6A4F"
@@ -82,7 +81,6 @@ if modulo == "📊 Dashboard de Contrapartes":
         except Exception:
             st.dataframe(data, hide_index=True)
 
-    # ── CSS ──
     st.markdown(f"""
     <style>
       @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&display=swap');
