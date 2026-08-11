@@ -824,6 +824,37 @@ if modulo == M_CTAS:
                 pass
         return d
 
+    # ── COLUMNAS QUE NO SE MUESTRAN ─────────────────────────────────
+    # Se ocultan de las tablas pero NO se borran: `column_order` es solo
+    # visual y el editor sigue devolviendo la columna con sus valores, así
+    # que al guardar el dato viaja intacto al Excel.
+    # Para volver a mostrar la fecha, vaciá esta tupla: OCULTAR = ()
+    OCULTAR = ("fecha",)
+
+    def _visibles(df):
+        if df is None or df.empty:
+            return None
+        return [c for c in df.columns
+                if not any(p in str(c).lower() for p in OCULTAR)]
+
+    # ── CUENTAS NUEVAS PENDIENTES DE GUARDAR ────────────────────────
+    # Las altas se acumulan en la sesión y se suman a la hoja antes de
+    # mostrarla, así aparecen en la tabla y se guardan junto con todo lo demás
+    # cuando apretás Guardar. Se vacían recién cuando el guardado sale bien.
+    if "nuevas_ctas" not in st.session_state:
+        st.session_state["nuevas_ctas"] = {"com": [], "rem": []}
+
+    def _sumar_nuevas(df, clave):
+        pend = st.session_state["nuevas_ctas"].get(clave) or []
+        if df is None or not pend:
+            return df
+        return pd.concat([df, pd.DataFrame(pend)], ignore_index=True, sort=False)
+
+    df_com = _sumar_nuevas(df_com, "com")
+    df_rem = _sumar_nuevas(df_rem, "rem")
+    n_pendientes = (len(st.session_state["nuevas_ctas"]["com"]) +
+                    len(st.session_state["nuevas_ctas"]["rem"]))
+
     df_com, df_rem, df_fci = _enteros(df_com), _enteros(df_rem), _enteros(df_fci)
 
     # ── FILTROS ─────────────────────────────────────────────────────
@@ -961,47 +992,10 @@ if modulo == M_CTAS:
         )
         chart(fig_est, key="estados")
 
-    # ── AVANCE POR FONDO ────────────────────────────────────────────
-    if COL_FONDO and len(fondos_vis) > 1:
-        filas_f = []
-        for fondo in sorted(fondos_vis):
-            conteo = {e: 0 for e in ESTADOS}
-            tt = 0
-            for d in (vis_com, vis_rem):
-                if d is None or d.empty or COL_FONDO not in d.columns:
-                    continue
-                sub = d[d[COL_FONDO].astype(str).str.strip() == fondo]
-                tt += len(sub)
-                if "Estado" in sub.columns:
-                    for e in ESTADOS:
-                        conteo[e] += int((sub["Estado"] == e).sum())
-            filas_f.append((fondo, tt, conteo))
-        filas_f.sort(key=lambda r: r[1], reverse=True)
-        fig_f = go.Figure()
-        for e in ESTADOS:
-            vals = [r[2][e] for r in filas_f]
-            if not any(vals):
-                continue
-            fig_f.add_trace(go.Bar(
-                y=[r[0] for r in filas_f], x=vals, orientation="h",
-                name=f"{EST_ICONO[e]} {e}",
-                marker_color={"Abierta": GREEN_DIM, "En proceso": AMBER,
-                              "Rechazada": RED, "De baja": "#9AA5A0"}[e],
-                hovertemplate="<b>%{y}</b><br>" + e + ": %{x}<extra></extra>",
-            ))
-        fig_f.update_layout(
-            **BASE_LAYOUT, barmode="stack", height=max(200, 30 * len(filas_f) + 95),
-            legend=dict(orientation="h", y=-0.16, x=0, traceorder="normal",
-                        font=dict(size=9.5, family=FONT_FAMILY)),
-            xaxis=dict(gridcolor="#EDEFED", zeroline=False, dtick=1,
-                       tickfont=dict(size=9, color=GRAY_TEXT, family=FONT_FAMILY)),
-            yaxis=dict(autorange="reversed",
-                       tickfont=dict(size=9.5, color=DARK_TEXT, family=FONT_FAMILY)),
-            margin=dict(l=0, r=10, t=30, b=38),
-            title=dict(text=f"Cuentas por {ETIQ_FONDO.lower()}", x=0, xanchor="left",
-                       font=dict(size=11.5, family=FONT_FAMILY, color=GRAY_TEXT)),
-        )
-        chart(fig_f, key="por_fondo")
+    # NOTA: acá había un gráfico de barras "Cuentas por FCI". Se quitó a
+    # pedido: con 93 fondos eran 93 barras y no se leía nada. Si alguna vez
+    # se quiere volver a mostrar, conviene limitarlo a un Top 10 por volumen
+    # de solicitudes en vez de listarlos todos.
 
     if avisos:
         st.markdown('<div class="note warn"><b>Para revisar en el Excel:</b><br>' +
@@ -1014,9 +1008,63 @@ if modulo == M_CTAS:
     if filtro_filas:
         st.markdown(
             '<div class="note"><b>Con filtros de fila activos podés cambiar celdas, pero no '
-            'agregar ni borrar filas.</b> Al guardar, lo editado vuelve a su fila original del '
-            'Excel y el resto queda intacto. Para dar de alta una cuenta nueva, limpiá los '
-            'filtros primero.</div>', unsafe_allow_html=True)
+            'agregar ni borrar filas desde la grilla.</b> Al guardar, lo editado vuelve a su fila '
+            'original del Excel y el resto queda intacto. Para dar de alta una cuenta usá el '
+            'formulario de abajo, que funciona con filtros puestos o sin ellos.</div>',
+            unsafe_allow_html=True)
+
+    # ── ALTA DE UNA CUENTA NUEVA ────────────────────────────────────
+    # Con 700+ filas, buscar la fila vacía del final de la grilla es
+    # impracticable. El formulario agrega la cuenta sin depender de scrollear
+    # ni de que los filtros estén limpios.
+    with st.expander("➕  Agregar una cuenta nueva", expanded=False):
+        alta_tipo = st.radio("¿Qué tipo de cuenta?", [TIPO_COM, TIPO_REM],
+                             horizontal=True, key="alta_tipo")
+        destino = df_com if alta_tipo == TIPO_COM else df_rem
+        clave_hoja = "com" if alta_tipo == TIPO_COM else "rem"
+
+        if destino is None or not len(destino.columns):
+            st.info("No se puede dar de alta: la hoja no tiene columnas definidas.")
+        else:
+            with st.form("form_alta", clear_on_submit=True):
+                campos = list(destino.columns)
+                valores = {}
+                for i in range(0, len(campos), 3):
+                    grupo = campos[i:i + 3]
+                    cols_ui = st.columns(len(grupo))
+                    for cu, nombre_col in zip(cols_ui, grupo):
+                        with cu:
+                            bajo = str(nombre_col).lower()
+                            if nombre_col == "Estado":
+                                valores[nombre_col] = st.selectbox(
+                                    nombre_col, ESTADOS, index=0)
+                            elif COL_TIPO and nombre_col == COL_TIPO:
+                                st.text_input(nombre_col, value=alta_tipo, disabled=True)
+                                valores[nombre_col] = alta_tipo
+                            elif "fecha" in bajo:
+                                valores[nombre_col] = st.date_input(
+                                    nombre_col, value=pd.Timestamp.today().date())
+                            else:
+                                valores[nombre_col] = st.text_input(nombre_col, placeholder="—")
+                sumar = st.form_submit_button("Agregar a la tabla")
+
+            if sumar:
+                fila = {}
+                for c, v in valores.items():
+                    if isinstance(v, str):
+                        v = v.strip()
+                    fila[c] = v if v not in ("", None) else pd.NA
+                if COL_TIPO:
+                    fila[COL_TIPO] = alta_tipo
+                st.session_state["nuevas_ctas"][clave_hoja].append(fila)
+                st.rerun()
+
+    if n_pendientes:
+        st.markdown(
+            f'<div class="note warn"><b>{n_pendientes} cuenta(s) nueva(s) agregada(s) a la '
+            f'tabla, todavía sin guardar.</b> Aparecen al final de su pestaña. Apretá '
+            f'<b>Guardar cambios</b> abajo para que queden en el repo.</div>',
+            unsafe_allow_html=True)
 
     cfg = {
         "Estado": st.column_config.SelectboxColumn(
@@ -1043,7 +1091,7 @@ if modulo == M_CTAS:
     def _editar(df_full, vis, clave, etiqueta):
         st.markdown(f'<div class="chart-label">{etiqueta}</div>', unsafe_allow_html=True)
         ed = st.data_editor(a_vista(vis), column_config=cfg, num_rows=modo_filas,
-                            hide_index=True, key=clave)
+                            hide_index=True, key=clave, column_order=_visibles(vis))
         ed = a_datos(ed)
         if filtro_filas:
             base = df_full.copy()
@@ -1073,6 +1121,10 @@ if modulo == M_CTAS:
             partes.append(p)
         if partes:
             cons = pd.concat(partes, ignore_index=True, sort=False)
+            # Acá sí se puede recortar de verdad: esta vista es de solo lectura,
+            # no se guarda, así que sacar la columna no toca el Excel.
+            cons = cons[[c for c in cons.columns
+                         if not any(p in str(c).lower() for p in OCULTAR)]]
             frente = [c for c in (COL_TIPO or "Tipo", "Contraparte", COL_FONDO, "Estado")
                       if c and c in cons.columns]
             cons = cons[frente + [c for c in cons.columns if c not in frente]]
@@ -1161,6 +1213,9 @@ if modulo == M_CTAS:
                         f"Seguimiento de cuentas · {iniciales.strip().upper()} · {sello}")
                     if ok:
                         cargar_cuentas.clear()
+                        # Recién ahora se vacían las altas pendientes: si el
+                        # guardado fallaba, se perdían las cuentas nuevas.
+                        st.session_state["nuevas_ctas"] = {"com": [], "rem": []}
                         st.session_state["_cuentas_nonce"] = nonce + 1
                         st.success(f"Guardado en el repo a nombre de {iniciales.strip().upper()}. "
                                    f"Las filas que el filtro no mostraba quedaron intactas.")
