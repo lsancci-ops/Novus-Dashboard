@@ -1,1 +1,20 @@
+# ═══════════════════════════════════════════════════════════
+# NOVUS ASSET MANAGEMENT — tema Streamlit
+# Esto elimina el ROJO por defecto de Streamlit en TODOS los widgets
+# (tabs, radios, sliders, spinners, links, focus) desde la raíz,
+# en lugar de parchearlo con CSS caso por caso.
+# ═══════════════════════════════════════════════════════════
+[theme]
+base                    = "light"
+primaryColor            = "#5DBB63"   # verde acento Novus
+backgroundColor         = "#F0F2F0"   # fondo claro Novus
+secondaryBackgroundColor = "#FFFFFF"  # cards / inputs
+textColor               = "#1A1C1A"   # texto oscuro Novus
+font                    = "sans serif"
 
+[client]
+toolbarMode = "minimal"
+showErrorDetails = false
+
+[browser]
+gatherUsageStats = false

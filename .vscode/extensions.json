@@ -1,0 +1,9 @@
+{
+  "// nota": "VS Code va a ofrecer instalar estas al abrir el proyecto",
+  "recommendations": [
+    "ms-python.python",
+    "ms-azuretools.vscode-docker",
+    "charliermarsh.ruff",
+    "eamodio.gitlens"
+  ]
+}

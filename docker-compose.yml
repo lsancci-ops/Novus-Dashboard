@@ -1,0 +1,31 @@
+# ═══════════════════════════════════════════════════════════════
+# Desarrollo local. Un solo comando levanta todo:
+#     docker compose up
+# Después abrís http://localhost:8501
+# ═══════════════════════════════════════════════════════════════
+services:
+  dashboard:
+    build: .
+    container_name: novus-dashboard
+    ports:
+      - "8501:8501"
+    environment:
+      PORT: 8501
+    # Lee las variables de .env (que no se sube al repo).
+    # `required: false` es importante: sin eso, `docker compose up` falla en
+    # seco la primera vez, antes de que hayas creado tu .env.
+    env_file:
+      - path: .env
+        required: false
+    volumes:
+      # Monta la carpeta del proyecto dentro del contenedor: guardás en
+      # VS Code y Streamlit recarga solo, sin reconstruir la imagen.
+      # Reconstruís (docker compose build) solo si cambiás requirements.txt.
+      - .:/app
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8501/_stcore/health')"]
+      interval: 30s
+      timeout: 5s
+      start_period: 40s
+      retries: 3

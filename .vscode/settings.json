@@ -1,0 +1,23 @@
+{
+  "// nota": "Config del proyecto. Se aplica solo acá, no toca tu VS Code global.",
+
+  "files.exclude": {
+    "**/__pycache__": true,
+    "**/*.pyc": true
+  },
+  "files.trimTrailingWhitespace": true,
+  "files.insertFinalNewline": true,
+
+  "editor.rulers": [100],
+  "[python]": {
+    "editor.formatOnSave": false,
+    "editor.tabSize": 4
+  },
+
+  "python.analysis.typeCheckingMode": "off",
+  "python.terminal.activateEnvironment": true,
+
+  "// docker": "Con la extensión de Docker: click derecho en docker-compose.yml -> Compose Up",
+  "git.autofetch": true,
+  "git.confirmSync": false
+}
