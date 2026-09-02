@@ -1,0 +1,20 @@
+# Secretos locales — nunca deben subirse al repo
+.streamlit/secrets.toml
+.env
+
+# Entornos virtuales
+.venv
+venv
+
+# Python
+__pycache__/
+*.py[cod]
+
+# Editor
+.vscode/
+.DS_Store
+
+# Backups y borradores locales de este proyecto
+app_v*_backup.py
+_bloque*.py
+_modulo*.py
