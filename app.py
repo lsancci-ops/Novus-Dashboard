@@ -361,6 +361,39 @@ st.markdown(f"""
   .sidebar-tag {{ color: #7A857D !important; font-size: .65rem; letter-spacing: 1.5px;
       text-transform: uppercase; padding: 0 2px 14px; }}
 
+  /* ── BARRA DE PESTAÑAS SUPERIOR (selector de módulo) ── */
+  div.st-key-novus_topnav {{
+      background: {WHITE};
+      border-bottom: 1px solid {BORDER};
+      margin: -1rem -1rem 1.1rem -1rem;
+      padding: 0 36px;
+  }}
+  div.st-key-novus_topnav div[data-testid="stRadio"] > label {{ display: none !important; }}
+  div.st-key-novus_topnav div[role="radiogroup"] {{
+      gap: 4px !important; flex-wrap: nowrap !important; flex-direction: row !important;
+  }}
+  div.st-key-novus_topnav div[role="radiogroup"] label {{
+      background: transparent !important;
+      border: none !important;
+      border-bottom: 3px solid transparent !important;
+      border-radius: 0 !important;
+      padding: 16px 22px !important;
+      margin: 0 !important;
+      font-size: .92rem !important; font-weight: 600 !important;
+      letter-spacing: 0 !important; text-transform: none !important;
+      color: {GRAY_TEXT} !important;
+      transition: all .15s;
+  }}
+  div.st-key-novus_topnav div[role="radiogroup"] label:hover {{ color: {DARK_TEXT} !important; }}
+  div.st-key-novus_topnav div[role="radiogroup"] label:has(input:checked) {{
+      border-bottom-color: {GREEN} !important;
+  }}
+  div.st-key-novus_topnav div[role="radiogroup"] label:has(input:checked) div,
+  div.st-key-novus_topnav div[role="radiogroup"] label:has(input:checked) p {{
+      color: {GREEN} !important; font-weight: 700 !important;
+  }}
+  div.st-key-novus_topnav div[role="radiogroup"] label > div:first-child {{ display: none !important; }}
+
   #MainMenu, footer, header {{ visibility: hidden; height: 0; }}
   .block-container {{ padding-top: 0 !important; padding-bottom: 1.5rem !important; }}
 </style>
@@ -453,9 +486,12 @@ st.sidebar.markdown(
     '<div class="sidebar-brand">novus <span>asset management</span></div>'
     '<div class="sidebar-tag">middle office</div>', unsafe_allow_html=True)
 
-# El label del radio hace de encabezado temático del grupo: el CSS del sidebar
-# lo pinta en verde, mayúsculas y con tracking, así queda como título de sección.
-modulo = st.sidebar.radio("Contrapartes", [M_DASH, M_CTAS], key="nav_modulo")
+# Selector de módulo como barra de pestañas arriba del contenido, en vez de
+# radio en el sidebar. El key="novus_topnav" del container es lo que el CSS
+# usa para pintar este radio como tabs (ver div.st-key-novus_topnav más arriba).
+with st.container(key="novus_topnav"):
+    modulo = st.radio("Contrapartes", [M_DASH, M_CTAS],
+                      horizontal=True, label_visibility="collapsed", key="nav_modulo")
 
 # Recordatorio discreto del estado de acceso, al pie del sidebar.
 st.sidebar.markdown(
