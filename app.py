@@ -1235,6 +1235,10 @@ if modulo == M_CTAS:
                              horizontal=True, key="alta_tipo")
         destino = df_com if alta_tipo == TIPO_COM else df_rem
         clave_hoja = "com" if alta_tipo == TIPO_COM else "rem"
+        etapas_alta = ETAPAS_COM if alta_tipo == TIPO_COM else ETAPAS_REM
+        # Misma columna de fondo por hoja que en la tabla y el modal: "FCI"
+        # en Comitentes, "Fondo" en Remuneradas — no una global compartida.
+        col_fondo_alta = _primera_col(CAND_FONDO, destino)
 
         if destino is None or not len(destino.columns):
             st.info("No se puede dar de alta: la hoja no tiene columnas definidas.")
@@ -1242,6 +1246,7 @@ if modulo == M_CTAS:
             with st.form("form_alta", clear_on_submit=True):
                 campos = list(destino.columns)
                 valores = {}
+                fci_multiples = []
                 for i in range(0, len(campos), 3):
                     grupo = campos[i:i + 3]
                     cols_ui = st.columns(len(grupo))
@@ -1251,12 +1256,21 @@ if modulo == M_CTAS:
                             if nombre_col == "Estado":
                                 valores[nombre_col] = st.selectbox(
                                     nombre_col, ESTADOS, index=0)
-                            elif COL_FONDO and nombre_col == COL_FONDO and CATALOGO:
-                                # Desplegable con el catálogo: así no nacen
-                                # variantes nuevas del mismo fondo.
+                            elif nombre_col == "Etapa":
                                 valores[nombre_col] = st.selectbox(
-                                    nombre_col, CATALOGO, index=None,
-                                    placeholder="Elegí un FCI de la lista")
+                                    nombre_col, etapas_alta, index=0,
+                                    help="Etapa inicial del onboarding para esta cuenta.")
+                            elif col_fondo_alta and nombre_col == col_fondo_alta:
+                                if CATALOGO:
+                                    # Multiselect: se genera una fila por cada
+                                    # FCI elegido, todas con los mismos datos
+                                    # de contraparte — así se cargan de una
+                                    # varios fondos para la misma contraparte.
+                                    fci_multiples = st.multiselect(
+                                        f"{nombre_col} (podés elegir varios)", CATALOGO,
+                                        placeholder="Elegí uno o más FCI de la lista")
+                                else:
+                                    valores[nombre_col] = st.text_input(nombre_col, placeholder="—")
                             elif COL_TIPO and nombre_col == COL_TIPO:
                                 st.text_input(nombre_col, value=alta_tipo, disabled=True)
                                 valores[nombre_col] = alta_tipo
@@ -1268,15 +1282,24 @@ if modulo == M_CTAS:
                 sumar = st.form_submit_button("Agregar a la tabla")
 
             if sumar:
-                fila = {}
-                for c, v in valores.items():
-                    if isinstance(v, str):
-                        v = v.strip()
-                    fila[c] = v if v not in ("", None) else pd.NA
-                if COL_TIPO:
-                    fila[COL_TIPO] = alta_tipo
-                st.session_state["nuevas_ctas"][clave_hoja].append(fila)
-                st.rerun()
+                if col_fondo_alta and CATALOGO and not fci_multiples:
+                    st.warning("Elegí al menos un FCI antes de agregar.")
+                else:
+                    base = {}
+                    for c, v in valores.items():
+                        if isinstance(v, str):
+                            v = v.strip()
+                        base[c] = v if v not in ("", None) else pd.NA
+                    if COL_TIPO:
+                        base[COL_TIPO] = alta_tipo
+                    if fci_multiples:
+                        for fci in fci_multiples:
+                            fila = dict(base)
+                            fila[col_fondo_alta] = fci
+                            st.session_state["nuevas_ctas"][clave_hoja].append(fila)
+                    else:
+                        st.session_state["nuevas_ctas"][clave_hoja].append(base)
+                    st.rerun()
 
     if n_pendientes:
         st.markdown(
