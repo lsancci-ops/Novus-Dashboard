@@ -30,7 +30,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 st.set_page_config(
-    page_title="novus | agentes",
+    page_title="Novus AM | Dashboards",
     page_icon="📊",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -1525,24 +1525,79 @@ if modulo == M_FCI:
     # ═══════════════════════════════════════════════════════════════
     FCI_FLUJOS_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fci_flujos.csv")
     FCI_AUM_PATH    = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fci_patrimonio.csv")
+    MESES_ABR = {1: "ene", 2: "feb", 3: "mar", 4: "abr", 5: "may", 6: "jun",
+                 7: "jul", 8: "ago", 9: "sep", 10: "oct", 11: "nov", 12: "dic"}
+
+    def _col(df, candidatos):
+        """Busca, sin distinguir mayúsculas ni espacios, la primera columna
+        de `df` que matchee alguno de los `candidatos`. None si no hay match."""
+        idx = {str(c).strip().lower().replace(" ", "_"): c for c in df.columns}
+        for cand in candidatos:
+            real = idx.get(cand.strip().lower().replace(" ", "_"))
+            if real is not None:
+                return real
+        return None
+
+    def _renombrar(df, mapa_candidatos, requeridas):
+        """mapa_candidatos: {nombre_canónico: [candidatos]}. Renombra las
+        columnas encontradas al nombre canónico; corta la app con un error
+        legible si falta alguna de las `requeridas`."""
+        resueltas, faltan = {}, []
+        for canon, candidatos in mapa_candidatos.items():
+            real = _col(df, candidatos)
+            if real is not None:
+                resueltas[real] = canon
+            elif canon in requeridas:
+                faltan.append(canon)
+        if faltan:
+            st.error(f"Al archivo le faltan columnas esperadas: {', '.join(faltan)}.")
+            st.stop()
+        return df.rename(columns=resueltas)
 
     @st.cache_data(ttl=600, show_spinner="Cargando suscripciones y rescates…")
     def _cargar_fci_flujos(path, _mtime):
-        df = pd.read_csv(path, parse_dates=["Fecha"])
+        df = pd.read_csv(path)
+        df = _renombrar(df, {
+            "Fecha": ["fecha", "fecha_movimiento", "date"],
+            "Fondo": ["fondo", "fci", "nombre_fondo"],
+            "Tipo": ["tipo", "tipo_fondo", "categoria"],
+            "Movimiento": ["movimiento", "tipo_operacion", "tipo_op"],
+            "Moneda": ["moneda", "moneda_liquidacion", "simbolo"],
+            "Cantidad_Cuotapartes": ["cantidad_cuotapartes", "cantidad", "cuotapartes"],
+            "Valor_Cuotaparte": ["valor_cuotaparte", "vcp"],
+            "Importe": ["importe", "monto", "importe_original"],
+            "Importe_USD": ["importe_usd", "monto_usd", "importe_dolares"],
+        }, requeridas={"Fecha", "Fondo", "Tipo", "Movimiento", "Importe_USD"})
+        df["Fecha"] = pd.to_datetime(df["Fecha"], errors="coerce")
+        df = df.dropna(subset=["Fecha"])
         for c in ("Fondo", "Tipo", "Movimiento", "Moneda"):
-            df[c] = df[c].astype(str).str.strip()
+            if c in df.columns:
+                df[c] = df[c].astype(str).str.strip()
         for c in ("Cantidad_Cuotapartes", "Valor_Cuotaparte", "Importe", "Importe_USD"):
-            df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0.0)
+            if c in df.columns:
+                df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0.0)
         df["MesInicio"] = df["Fecha"].dt.to_period("M").dt.to_timestamp()
         return df.sort_values("Fecha").reset_index(drop=True)
 
     @st.cache_data(ttl=600, show_spinner="Cargando patrimonio de FCI…")
     def _cargar_fci_aum(path, _mtime):
-        df = pd.read_csv(path, parse_dates=["Fecha"])
+        df = pd.read_csv(path)
+        df = _renombrar(df, {
+            "Fecha": ["fecha", "date"],
+            "Fondo": ["fondo", "fci", "nombre_fondo"],
+            "Tipo": ["tipo", "tipo_fondo", "categoria"],
+            "Moneda": ["moneda", "moneda_patrimonio"],
+            "PatrimonioNeto": ["patrimonioneto", "patrimonio_neto", "patrimonio", "aum"],
+            "PatrimonioNeto_USD": ["patrimonioneto_usd", "patrimonio_neto_usd", "aum_usd", "patrimonio_usd"],
+        }, requeridas={"Fecha", "Fondo", "Tipo", "PatrimonioNeto_USD"})
+        df["Fecha"] = pd.to_datetime(df["Fecha"], errors="coerce")
+        df = df.dropna(subset=["Fecha"])
         for c in ("Fondo", "Tipo", "Moneda"):
-            df[c] = df[c].astype(str).str.strip()
+            if c in df.columns:
+                df[c] = df[c].astype(str).str.strip()
         for c in ("PatrimonioNeto", "PatrimonioNeto_USD"):
-            df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0.0)
+            if c in df.columns:
+                df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0.0)
         return df.sort_values("Fecha").reset_index(drop=True)
 
     st.markdown(f"""
@@ -1590,9 +1645,10 @@ if modulo == M_FCI:
     # saca de la vista para poder ver la dinámica de las demás estrategias
     # sin que queden aplastadas en los gráficos y rankings.
     MM_TIPOS = {"Money Market", "Money Market USDMEP"}
-    excluir_mm = st.checkbox("Excluir Money Market / T+0", key="fci_excluir_mm",
-                             help="Saca Novus Liquidez y Novus Dolar MM de esta vista para que no "
-                                  "tapen la dinámica del resto de los fondos.")
+    excluir_mm = st.checkbox("Excluir Money Market / T+0", value=True, key="fci_excluir_mm",
+                             help="Activado por defecto: con suscripciones de USD 3,85B sobre un "
+                                  "patrimonio de USD 226M, la vista sin filtrar es puro ida y vuelta "
+                                  "de caja de corto plazo y tapa la dinámica del resto de los fondos.")
 
     fci_desde, fci_hasta = FCI_MIN, FCI_MAX
     if isinstance(f_fecha, (tuple, list)):
@@ -1648,6 +1704,115 @@ if modulo == M_FCI:
                     f'<div class="kpi-sub">{df_flujos["Fondo"].nunique()} fondos con actividad</div></div>',
                     unsafe_allow_html=True)
 
+    # ── DESCOMPOSICIÓN DEL PATRIMONIO (nivel total) ───────────────────
+    st.markdown('<div class="section-title" style="margin-top:22px">Descomposición del patrimonio</div>'
+                '<div class="section-underline"></div>', unsafe_allow_html=True)
+
+    pat_ini_total = df_aum.loc[df_aum["Fecha"] == df_aum["Fecha"].min(), "PatrimonioNeto_USD"].sum()
+    pat_fin_total = df_aum.loc[df_aum["Fecha"] == df_aum["Fecha"].max(), "PatrimonioNeto_USD"].sum()
+    # Residual contable: lo que no explica ni el patrimonio inicial ni el
+    # flujo neto. Absorbe retorno de cartera, efecto cambiario (conversión
+    # ARS/USD) y el timing de los flujos dentro del período — por eso NO se
+    # llama "rendimiento": no es un cálculo de retorno de cuotaparte.
+    efecto_mercado_tc_total = pat_fin_total - pat_ini_total - neto
+
+    def _celda_cadena(label, valor, color=None):
+        col_style = f"color:{color};" if color else ""
+        st.markdown(f'<div class="kpi-card"><div class="kpi-label">{label}</div>'
+                    f'<div class="kpi-value sm" style="{col_style}">{fmt_usd(valor)}</div></div>',
+                    unsafe_allow_html=True)
+
+    def _op_cadena(simbolo):
+        st.markdown(f'<div style="display:flex;align-items:center;justify-content:center;'
+                    f'height:64px;font-size:1.3rem;font-weight:700;color:{GRAY_TEXT};">{simbolo}</div>',
+                    unsafe_allow_html=True)
+
+    cad = st.columns([2, 0.4, 2, 0.4, 2, 0.4, 2, 0.4, 2.3, 0.4, 2])
+    with cad[0]:  _celda_cadena("Patrimonio inicial", pat_ini_total)
+    with cad[1]:  _op_cadena("+")
+    with cad[2]:  _celda_cadena("Suscripciones", susc, GREEN_DIM)
+    with cad[3]:  _op_cadena("−")
+    with cad[4]:  _celda_cadena("Rescates", resc, RED)
+    with cad[5]:  _op_cadena("=")
+    with cad[6]:  _celda_cadena("Flujo neto", neto, GREEN_DIM if neto >= 0 else RED)
+    with cad[7]:  _op_cadena("+")
+    with cad[8]:
+        st.markdown(f'<div class="kpi-card"><div class="kpi-label">Efecto mercado + TC '
+                    f'<span title="Residual contable: Patrimonio final − Patrimonio inicial − Flujo '
+                    f'neto. Incluye retorno de cartera, efecto cambiario (conversión ARS/USD) y el '
+                    f'timing de los flujos dentro del período — no es un cálculo exacto de retorno de '
+                    f'cuotaparte." style="cursor:help;color:{GRAY_TEXT}">ⓘ</span></div>'
+                    f'<div class="kpi-value sm" style="color:'
+                    f'{GREEN_DIM if efecto_mercado_tc_total >= 0 else RED}">'
+                    f'{fmt_usd(efecto_mercado_tc_total)}</div></div>', unsafe_allow_html=True)
+    with cad[9]:  _op_cadena("=")
+    with cad[10]: _celda_cadena("Patrimonio final", pat_fin_total)
+
+    # ── MÉTRICAS ANALÍTICAS: TICKETS Y STRESS TEST ────────────────────
+    st.markdown('<div class="section-title" style="margin-top:22px">Ticket promedio y stress test</div>'
+                '<div class="section-underline"></div>', unsafe_allow_html=True)
+
+    n_susc = int((df_flujos["Movimiento"] == "Suscripcion").sum())
+    n_resc = int((df_flujos["Movimiento"] == "Rescate").sum())
+    ticket_susc = susc / n_susc if n_susc else np.nan
+    ticket_resc = resc / n_resc if n_resc else np.nan
+    ratio_rr = (ticket_resc / ticket_susc) if ticket_susc else np.nan
+
+    # Peor mes: flujo neto mensual vs. patrimonio total al inicio de ese mes
+    # (el patrimonio a la última fecha disponible ANTES de que arranque el
+    # mes; si no hay fecha previa, se usa la primera disponible del mes).
+    aum_diario_total = df_aum.groupby("Fecha")["PatrimonioNeto_USD"].sum().sort_index()
+
+    def _patrimonio_inicio_mes(mes_inicio):
+        anteriores = aum_diario_total[aum_diario_total.index < mes_inicio]
+        if len(anteriores):
+            return anteriores.iloc[-1]
+        posteriores = aum_diario_total[aum_diario_total.index >= mes_inicio]
+        return posteriores.iloc[0] if len(posteriores) else np.nan
+
+    mensual = (df_flujos.groupby(["MesInicio", "Movimiento"])["Importe_USD"].sum()
+               .unstack(fill_value=0.0).sort_index())
+    for col in ("Suscripcion", "Rescate"):
+        if col not in mensual.columns:
+            mensual[col] = 0.0
+    mensual["Neto"] = mensual["Suscripcion"] - mensual["Rescate"]
+
+    peor_mes_txt = "n/d"
+    if len(mensual):
+        peor_idx = mensual["Neto"].idxmin()
+        peor_neto = mensual.loc[peor_idx, "Neto"]
+        pat_inicio_peor = _patrimonio_inicio_mes(peor_idx)
+        pct_peor = (peor_neto / pat_inicio_peor * 100) if pat_inicio_peor else np.nan
+        pct_txt = f"{pct_peor:,.1f}%" if pd.notna(pct_peor) else "n/d"
+        peor_mes_txt = f"{MESES_ABR[peor_idx.month]}-{peor_idx.year}, {fmt_usd(peor_neto)} ({pct_txt} del patrimonio)"
+
+    st1, st2, st3, st4 = st.columns(4)
+    with st1:
+        st.markdown(f'<div class="kpi-card"><div class="kpi-label">Ticket promedio suscripción</div>'
+                    f'<div class="kpi-value sm">{fmt_usd(ticket_susc)}</div>'
+                    f'<div class="kpi-sub">{n_susc:,} movimientos</div></div>', unsafe_allow_html=True)
+    with st2:
+        st.markdown(f'<div class="kpi-card"><div class="kpi-label">Ticket promedio rescate</div>'
+                    f'<div class="kpi-value sm">{fmt_usd(ticket_resc)}</div>'
+                    f'<div class="kpi-sub">{n_resc:,} movimientos</div></div>', unsafe_allow_html=True)
+    with st3:
+        color_ratio = RED if pd.notna(ratio_rr) and ratio_rr > 1 else DARK_TEXT
+        st.markdown(f'<div class="kpi-card"><div class="kpi-label">Ratio rescate / suscripción</div>'
+                    f'<div class="kpi-value sm" style="color:{color_ratio}">'
+                    f'{f"{ratio_rr:,.2f}x" if pd.notna(ratio_rr) else "n/d"}</div>'
+                    f'<div class="kpi-sub">ticket rescate ÷ ticket suscripción</div></div>',
+                    unsafe_allow_html=True)
+    with st4:
+        st.markdown(f'<div class="kpi-card accent"><div class="kpi-label">Peor mes (stress test)</div>'
+                    f'<div class="kpi-value sm" style="color:{RED}">{peor_mes_txt}</div></div>',
+                    unsafe_allow_html=True)
+
+    if pd.notna(ratio_rr) and ratio_rr > 1:
+        st.markdown(
+            '<div class="note warn">⚠ <b>Alerta de pasivo:</b> se rescatan tenencias promedio más '
+            'grandes que las que ingresan, lo que deteriora la base de clientes.</div>',
+            unsafe_allow_html=True)
+
     # ── FLUJO MENSUAL (espejo) + NETO ACUMULADO ──────────────────────
     st.markdown('<div class="section-title" style="margin-top:22px">Evolución del flujo</div>'
                 '<div class="section-underline"></div>', unsafe_allow_html=True)
@@ -1655,11 +1820,6 @@ if modulo == M_FCI:
     fc1, fc2 = st.columns(2)
     with fc1:
         st.markdown('<div class="chart-label">Suscripciones vs. rescates por mes</div>', unsafe_allow_html=True)
-        mensual = (df_flujos.groupby(["MesInicio", "Movimiento"])["Importe_USD"].sum()
-                   .unstack(fill_value=0.0).sort_index())
-        for col in ("Suscripcion", "Rescate"):
-            if col not in mensual.columns:
-                mensual[col] = 0.0
         fig_mensual = go.Figure()
         fig_mensual.add_trace(go.Bar(
             x=mensual.index, y=mensual["Suscripcion"] / 1e6, name="Suscripciones",
@@ -1796,14 +1956,36 @@ if modulo == M_FCI:
     detalle["Tasa Rescate Mensual"] = tasa_total / n_meses
     aum_ini_all = df_aum[df_aum["Fecha"] == df_aum["Fecha"].min()].groupby("Fondo")["PatrimonioNeto_USD"].sum()
     variacion = aum_fin_all.reindex(detalle.index).fillna(0.0) - aum_ini_all.reindex(detalle.index).fillna(0.0)
-    detalle["Efecto Mercado"] = variacion - detalle["Neto"]
+    detalle["Efecto Mercado + TC"] = variacion - detalle["Neto"]
     detalle = detalle.reset_index().rename(
         columns={"Suscripcion": "Suscripciones", "Rescate": "Rescates", "Neto": "Flujo Neto"})
+
+    # ── FLUJOS EXTREMOS (mayor entrada / mayor salida neta) ───────────
+    # Umbral de materialidad: el mismo 2% del patrimonio total que ya se
+    # usa para agrupar "Otros" en el donut, así no aparecen acá clases
+    # residuales o inactivas con movimientos chicos pero % de flujo alto.
+    umbral_materialidad = aum_total_actual * 0.02
+    detalle_material = detalle[detalle["Patrimonio Actual"] >= umbral_materialidad]
+    if len(detalle_material) >= 2:
+        f_max = detalle_material.loc[detalle_material["Flujo Neto"].idxmax()]
+        f_min = detalle_material.loc[detalle_material["Flujo Neto"].idxmin()]
+        ex1, ex2 = st.columns(2)
+        with ex1:
+            st.markdown(f'<div class="kpi-card accent"><div class="kpi-label">📈 Mayor entrada neta</div>'
+                        f'<div class="kpi-name">{f_max["Fondo"]}</div>'
+                        f'<div class="kpi-value sm" style="color:{GREEN_DIM}">'
+                        f'{_monto_signed_html(f_max["Flujo Neto"])}</div></div>', unsafe_allow_html=True)
+        with ex2:
+            st.markdown(f'<div class="kpi-card"><div class="kpi-label">📉 Mayor salida neta</div>'
+                        f'<div class="kpi-name">{f_min["Fondo"]}</div>'
+                        f'<div class="kpi-value sm">{_monto_signed_html(f_min["Flujo Neto"])}</div></div>',
+                        unsafe_allow_html=True)
+        st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
 
     ORDEN_OPCIONES = {
         "Flujo neto": "Flujo Neto", "Patrimonio actual": "Patrimonio Actual",
         "Suscripciones": "Suscripciones", "Rescates": "Rescates",
-        "Tasa de rescate mensual": "Tasa Rescate Mensual", "Efecto mercado": "Efecto Mercado",
+        "Tasa de rescate mensual": "Tasa Rescate Mensual", "Efecto mercado + TC": "Efecto Mercado + TC",
         "Fondo (A-Z)": "Fondo",
     }
     oc1, oc2 = st.columns([3, 1])
@@ -1826,14 +2008,14 @@ if modulo == M_FCI:
             f'<td>{fmt_usd(r["Rescates"])}</td>'
             f'<td>{_monto_signed_html(r["Flujo Neto"])}</td>'
             f'<td>{tasa_html}</td>'
-            f'<td>{_monto_signed_html(r["Efecto Mercado"])}</td></tr>'
+            f'<td>{_monto_signed_html(r["Efecto Mercado + TC"])}</td></tr>'
         )
     st.markdown(f"""
     <div style="background:{WHITE};border:1px solid {BORDER};border-radius:10px;padding:12px 16px;overflow-x:auto;">
       <table class="var-table">
         <thead><tr><th>Fondo</th><th>Tipo</th><th>Patrimonio actual</th><th>Suscripciones</th>
         <th>Rescates</th><th>Flujo neto</th><th>Tasa rescate (prom. mensual)</th>
-        <th>Efecto mercado (USD)</th></tr></thead>
+        <th>Efecto mercado + TC (USD)</th></tr></thead>
         <tbody>{filas_detalle}</tbody>
       </table>
     </div>
@@ -1847,9 +2029,12 @@ if modulo == M_FCI:
       conversión. Los fondos lanzados después del inicio de la serie tienen menos historia — no es
       un error de datos. La <b>tasa de rescate</b> es Rescates / Patrimonio promedio del período,
       expresada como <b>promedio mensual</b> (dividida por los meses que abarca el filtro actual) para
-      que sea comparable entre fondos y entre distintos rangos de fechas. El <b>efecto mercado</b> es
-      lo que queda de la variación de patrimonio una vez descontado el flujo neto — una aproximación
-      del P&amp;L de la cartera, no un cálculo exacto de retorno.
+      que sea comparable entre fondos y entre distintos rangos de fechas. El <b>efecto mercado + TC</b>
+      es lo que queda de la variación de patrimonio una vez descontado el flujo neto — absorbe retorno
+      de cartera, efecto cambiario y timing de los flujos; es una aproximación contable, no un cálculo
+      exacto de retorno de cuotaparte. Las tarjetas de <b>mayor entrada/salida neta</b> excluyen fondos
+      con menos del 2% del patrimonio total, para no mostrar clases residuales o inactivas (mismo
+      umbral que agrupa "Otros" en el gráfico de participación).
     </div>
     """, unsafe_allow_html=True)
 
