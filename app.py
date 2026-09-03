@@ -67,7 +67,7 @@ AGENT_PALETTE = [
 OTROS_COLOR   = "#BFC7C1"
 MONEDA_COLORS = {"ARS": "#1B4332", "USDMEP": "#5DBB63", "USDC": "#95D5A0"}
 
-FONT_FAMILY = "'DM Sans', Arial, sans-serif"
+FONT_FAMILY = "'Quicksand', Arial, sans-serif"
 PLOTLY_CFG  = {"displayModeBar": False, "responsive": True}
 BASE_LAYOUT = dict(
     font=dict(family=FONT_FAMILY, color=DARK_TEXT),
@@ -128,7 +128,7 @@ def fmt_pct_html(pct, nd_reason=None):
 # ═══════════════════════════════════════════════════════════════
 st.markdown(f"""
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=Quicksand:wght@300;400;500;600;700&display=swap');
 
   html, body, .stApp {{
       font-family: {FONT_FAMILY} !important;
@@ -1688,7 +1688,7 @@ if modulo == M_FCI:
                 '<div class="section-underline"></div>', unsafe_allow_html=True)
 
     rank = (df_flujos.groupby(["Fondo", "Tipo", "Movimiento"])["Importe_USD"].sum()
-            .unstack(fill_value=0.0).reset_index())
+            .unstack(fill_value=0.0).rename_axis(columns=None).reset_index())
     for col in ("Suscripcion", "Rescate"):
         if col not in rank.columns:
             rank[col] = 0.0
@@ -1763,7 +1763,9 @@ if modulo == M_FCI:
                 '<div class="section-underline"></div>', unsafe_allow_html=True)
     st.markdown(
         '<div class="note">La <b>tasa de rescate</b> es Rescates / Patrimonio promedio del período: '
-        'normaliza por tamaño de fondo, así un fondo grande y uno chico se pueden comparar. El '
+        'normaliza por tamaño de fondo, así un fondo grande y uno chico se pueden comparar. En fondos '
+        'de alta rotación (ej. Money Market) es normal ver tasas muy por encima del 100% en períodos '
+        'largos — el efectivo entra y sale muchas veces, no significa que el fondo se vació. El '
         '<b>flujo neto</b> es el crecimiento orgánico (plata que entra o sale); el <b>rendimiento '
         'estimado</b> es lo que queda de la variación de patrimonio una vez descontado ese flujo — '
         'es una aproximación, no un cálculo exacto de retorno de cartera.</div>', unsafe_allow_html=True)
@@ -1772,7 +1774,10 @@ if modulo == M_FCI:
                .groupby("Fondo")["PatrimonioNeto_USD"].sum())
     aum_fin = (df_aum[df_aum["Fecha"] == ult_fecha]
                .groupby("Fondo")["PatrimonioNeto_USD"].sum())
-    aum_prom = aum_ini.add(aum_fin, fill_value=0.0) / 2
+    # Promedio real del patrimonio diario en el período filtrado (no solo
+    # inicio/fin): en fondos que fluctúan mucho dentro del período, el
+    # promedio de puntas subestima el patrimonio típico y infla la tasa.
+    aum_prom = df_aum.groupby("Fondo")["PatrimonioNeto_USD"].mean()
 
     cruce = rank.set_index("Fondo")[["Tipo", "Suscripcion", "Rescate", "Neto"]].copy()
     cruce["Patrimonio Actual"] = aum_fin.reindex(cruce.index).fillna(0.0)
