@@ -1701,40 +1701,17 @@ if modulo == M_FCI:
         )
         chart(fig_acum, key="fci_line_acumulado")
 
-    # ── RANKING DE FONDOS POR FLUJO ───────────────────────────────────
-    st.markdown('<div class="section-title" style="margin-top:22px">Ranking de fondos por flujo</div>'
-                '<div class="section-underline"></div>', unsafe_allow_html=True)
-
     rank = (df_flujos.groupby(["Fondo", "Tipo", "Movimiento"])["Importe_USD"].sum()
             .unstack(fill_value=0.0).rename_axis(columns=None).reset_index())
     for col in ("Suscripcion", "Rescate"):
         if col not in rank.columns:
             rank[col] = 0.0
     rank["Neto"] = rank["Suscripcion"] - rank["Rescate"]
-    rank = rank.sort_values("Neto", ascending=False)
 
     def _monto_signed_html(v):
         cls = "pos" if v >= 0 else "neg"
-        return f'<span class="{cls}">{fmt_usd(v)}</span>'
-
-    filas_rank = ""
-    for _, r in rank.iterrows():
-        sw = TIPO_COLOR.get(r["Tipo"], GREEN)
-        filas_rank += (
-            f'<tr><td><span class="swatch" style="background:{sw}"></span>{r["Fondo"]}</td>'
-            f'<td style="color:{GRAY_TEXT}">{r["Tipo"]}</td>'
-            f'<td>{fmt_usd(r["Suscripcion"])}</td>'
-            f'<td>{fmt_usd(r["Rescate"])}</td>'
-            f'<td>{_monto_signed_html(r["Neto"])}</td></tr>'
-        )
-    st.markdown(f"""
-    <div style="background:{WHITE};border:1px solid {BORDER};border-radius:10px;padding:12px 16px;">
-      <table class="var-table">
-        <thead><tr><th>Fondo</th><th>Tipo</th><th>Suscripciones</th><th>Rescates</th><th>Flujo neto</th></tr></thead>
-        <tbody>{filas_rank}</tbody>
-      </table>
-    </div>
-    """, unsafe_allow_html=True)
+        txt = fmt_usd(v)
+        return f'<span class="{cls}">{"+" + txt if v >= 0 else txt}</span>'
 
     # ── PATRIMONIO (AUM) ──────────────────────────────────────────────
     st.markdown('<div class="section-title" style="margin-top:22px">Patrimonio bajo administración</div>'
@@ -1800,55 +1777,64 @@ if modulo == M_FCI:
         )
         chart(fig_share, key="fci_pie_share")
 
-    # ── TASA DE RESCATE Y CRECIMIENTO ORGÁNICO VS. RENDIMIENTO ────────
-    st.markdown('<div class="section-title" style="margin-top:22px">Tasa de rescate y crecimiento orgánico</div>'
+    # ── DETALLE Y PERFORMANCE POR FONDO (tabla única) ─────────────────
+    st.markdown('<div class="section-title" style="margin-top:22px">Detalle y performance por fondo</div>'
                 '<div class="section-underline"></div>', unsafe_allow_html=True)
-    st.markdown(
-        '<div class="note">La <b>tasa de rescate</b> es Rescates / Patrimonio promedio del período: '
-        'normaliza por tamaño de fondo, así un fondo grande y uno chico se pueden comparar. En fondos '
-        'de alta rotación (ej. Money Market) es normal ver tasas muy por encima del 100% en períodos '
-        'largos — el efectivo entra y sale muchas veces, no significa que el fondo se vació. El '
-        '<b>flujo neto</b> es el crecimiento orgánico (plata que entra o sale); el <b>rendimiento '
-        'estimado</b> es lo que queda de la variación de patrimonio una vez descontado ese flujo — '
-        'es una aproximación, no un cálculo exacto de retorno de cartera.</div>', unsafe_allow_html=True)
 
-    aum_ini = (df_aum[df_aum["Fecha"] == df_aum["Fecha"].min()]
-               .groupby("Fondo")["PatrimonioNeto_USD"].sum())
-    aum_fin = (df_aum[df_aum["Fecha"] == ult_fecha]
-               .groupby("Fondo")["PatrimonioNeto_USD"].sum())
-    # Promedio real del patrimonio diario en el período filtrado (no solo
-    # inicio/fin): en fondos que fluctúan mucho dentro del período, el
-    # promedio de puntas subestima el patrimonio típico y infla la tasa.
     aum_prom = df_aum.groupby("Fondo")["PatrimonioNeto_USD"].mean()
+    aum_fin_all = df_aum[df_aum["Fecha"] == ult_fecha].groupby("Fondo")["PatrimonioNeto_USD"].sum()
+    # Meses reales que abarca el período filtrado: la tasa de rescate se
+    # divide por esto para pasar de "acumulado de todo el período" (que en
+    # 20 meses de un fondo de alta rotación da miles de %) a un promedio
+    # mensual, mucho más legible y comparable entre fondos.
+    n_meses = max((fci_hasta - fci_desde).days, 1) / 30.44
 
-    cruce = rank.set_index("Fondo")[["Tipo", "Suscripcion", "Rescate", "Neto"]].copy()
-    cruce["Patrimonio Actual"] = aum_fin.reindex(cruce.index).fillna(0.0)
-    pat_prom = aum_prom.reindex(cruce.index).fillna(0.0)
-    cruce["Tasa de Rescate"] = np.where(pat_prom > 0, cruce["Rescate"] / pat_prom * 100, np.nan)
-    variacion = aum_fin.reindex(cruce.index).fillna(0.0) - aum_ini.reindex(cruce.index).fillna(0.0)
-    cruce["Rendimiento Estimado"] = variacion - cruce["Neto"]
-    cruce = cruce.reset_index().rename(columns={"Neto": "Flujo Neto"}).sort_values(
-        "Tasa de Rescate", ascending=False)
+    detalle = rank.set_index("Fondo")[["Tipo", "Suscripcion", "Rescate", "Neto"]].copy()
+    detalle["Patrimonio Actual"] = aum_fin_all.reindex(detalle.index).fillna(0.0)
+    pat_prom = aum_prom.reindex(detalle.index).fillna(0.0)
+    tasa_total = np.where(pat_prom > 0, detalle["Rescate"] / pat_prom * 100, np.nan)
+    detalle["Tasa Rescate Mensual"] = tasa_total / n_meses
+    aum_ini_all = df_aum[df_aum["Fecha"] == df_aum["Fecha"].min()].groupby("Fondo")["PatrimonioNeto_USD"].sum()
+    variacion = aum_fin_all.reindex(detalle.index).fillna(0.0) - aum_ini_all.reindex(detalle.index).fillna(0.0)
+    detalle["Efecto Mercado"] = variacion - detalle["Neto"]
+    detalle = detalle.reset_index().rename(
+        columns={"Suscripcion": "Suscripciones", "Rescate": "Rescates", "Neto": "Flujo Neto"})
 
-    filas_cruce = ""
-    for _, r in cruce.iterrows():
+    ORDEN_OPCIONES = {
+        "Flujo neto": "Flujo Neto", "Patrimonio actual": "Patrimonio Actual",
+        "Suscripciones": "Suscripciones", "Rescates": "Rescates",
+        "Tasa de rescate mensual": "Tasa Rescate Mensual", "Efecto mercado": "Efecto Mercado",
+        "Fondo (A-Z)": "Fondo",
+    }
+    oc1, oc2 = st.columns([3, 1])
+    with oc1:
+        orden_label = st.selectbox("Ordenar por", list(ORDEN_OPCIONES.keys()), index=0, key="fci_orden_col")
+    with oc2:
+        orden_desc = st.checkbox("Descendente", value=True, key="fci_orden_desc")
+    detalle = detalle.sort_values(ORDEN_OPCIONES[orden_label], ascending=not orden_desc)
+
+    filas_detalle = ""
+    for _, r in detalle.iterrows():
         sw = TIPO_COLOR.get(r["Tipo"], GREEN)
-        tasa = r["Tasa de Rescate"]
+        tasa = r["Tasa Rescate Mensual"]
         tasa_html = f"{tasa:,.1f}%" if pd.notna(tasa) else '<span class="nd">n/d</span>'
-        filas_cruce += (
+        filas_detalle += (
             f'<tr><td><span class="swatch" style="background:{sw}"></span>{r["Fondo"]}</td>'
             f'<td style="color:{GRAY_TEXT}">{r["Tipo"]}</td>'
-            f'<td>{_monto_signed_html(r["Flujo Neto"])}</td>'
             f'<td>{fmt_usd(r["Patrimonio Actual"])}</td>'
+            f'<td>{fmt_usd(r["Suscripciones"])}</td>'
+            f'<td>{fmt_usd(r["Rescates"])}</td>'
+            f'<td>{_monto_signed_html(r["Flujo Neto"])}</td>'
             f'<td>{tasa_html}</td>'
-            f'<td>{_monto_signed_html(r["Rendimiento Estimado"])}</td></tr>'
+            f'<td>{_monto_signed_html(r["Efecto Mercado"])}</td></tr>'
         )
     st.markdown(f"""
-    <div style="background:{WHITE};border:1px solid {BORDER};border-radius:10px;padding:12px 16px;">
+    <div style="background:{WHITE};border:1px solid {BORDER};border-radius:10px;padding:12px 16px;overflow-x:auto;">
       <table class="var-table">
-        <thead><tr><th>Fondo</th><th>Tipo</th><th>Flujo neto</th><th>Patrimonio actual</th>
-        <th>Tasa de rescate</th><th>Rendimiento estimado</th></tr></thead>
-        <tbody>{filas_cruce}</tbody>
+        <thead><tr><th>Fondo</th><th>Tipo</th><th>Patrimonio actual</th><th>Suscripciones</th>
+        <th>Rescates</th><th>Flujo neto</th><th>Tasa rescate (prom. mensual)</th>
+        <th>Efecto mercado (USD)</th></tr></thead>
+        <tbody>{filas_detalle}</tbody>
       </table>
     </div>
     """, unsafe_allow_html=True)
@@ -1859,8 +1845,11 @@ if modulo == M_FCI:
       <b>Metodología.</b> Montos convertidos a USD: los pesos usan el tipo de cambio del día de cada
       movimiento o fecha de patrimonio; los fondos en dólares (MEP/CCL) se toman tal cual, sin
       conversión. Los fondos lanzados después del inicio de la serie tienen menos historia — no es
-      un error de datos. El patrimonio promedio usado para la tasa de rescate es el promedio simple
-      entre el patrimonio al inicio y al final del período filtrado.
+      un error de datos. La <b>tasa de rescate</b> es Rescates / Patrimonio promedio del período,
+      expresada como <b>promedio mensual</b> (dividida por los meses que abarca el filtro actual) para
+      que sea comparable entre fondos y entre distintos rangos de fechas. El <b>efecto mercado</b> es
+      lo que queda de la variación de patrimonio una vez descontado el flujo neto — una aproximación
+      del P&amp;L de la cartera, no un cálculo exacto de retorno.
     </div>
     """, unsafe_allow_html=True)
 
