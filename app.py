@@ -138,8 +138,8 @@ st.markdown(f"""
   /* ── HERO ── */
   .novus-hero {{
       background: linear-gradient(135deg, {DARK_BG} 0%, #162416 100%);
-      padding: 26px 36px 24px;
-      margin: -1rem -1rem 1.1rem -1rem;
+      padding: 26px var(--novus-pad) 24px;
+      margin: -1rem calc(-1 * var(--novus-pad)) 1.1rem calc(-1 * var(--novus-pad));
       border-radius: 0 0 12px 12px;
   }}
   .novus-eyebrow {{
@@ -361,61 +361,64 @@ st.markdown(f"""
   }}
   div[data-testid="stFormSubmitButton"] button {{ width: 100% !important; padding: 10px 16px !important; }}
 
-  /* ── SIDEBAR / NAVEGACION ── */
-  section[data-testid="stSidebar"] {{
-      background: {DARK_BG} !important;
-      border-right: 1px solid rgba(93,187,99,.15) !important;
+  /* ── ANCHO COMPLETO, SIN SIDEBAR ── */
+  :root {{ --novus-pad: clamp(16px, 3vw, 48px); }}
+  section[data-testid="stSidebar"],
+  [data-testid="collapsedControl"] {{ display: none !important; }}
+  .block-container {{
+      padding-top: 0 !important; padding-bottom: 1.5rem !important;
+      max-width: 100% !important;
+      padding-left: var(--novus-pad) !important; padding-right: var(--novus-pad) !important;
   }}
-  section[data-testid="stSidebar"] * {{ color: #C9D4CC !important; }}
-  section[data-testid="stSidebar"] .stRadio label {{
-      color: {GREEN} !important; letter-spacing: 1.4px !important;
-  }}
-  section[data-testid="stSidebar"] div[role="radiogroup"] {{ flex-direction: column !important; gap: 6px !important; }}
-  section[data-testid="stSidebar"] div[role="radiogroup"] label {{
-      background: rgba(255,255,255,.04) !important;
-      border: 1px solid rgba(255,255,255,.10) !important;
-      border-radius: 8px !important; width: 100%; padding: 9px 14px !important;
-  }}
-  section[data-testid="stSidebar"] div[role="radiogroup"] label:hover {{
-      border-color: rgba(93,187,99,.5) !important;
-  }}
-  section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked) {{
-      background: rgba(93,187,99,.14) !important; border-color: {GREEN} !important;
-  }}
-  section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked) * {{
-      color: {GREEN} !important; font-weight: 600 !important;
-  }}
-  .sidebar-brand {{
-      color: {GREEN}; font-size: .95rem; font-weight: 700; padding: 6px 2px 2px;
-  }}
-  .sidebar-brand span {{ color: #9AADA9; font-weight: 300; }}
-  .sidebar-tag {{ color: #7A857D !important; font-size: .65rem; letter-spacing: 1.5px;
-      text-transform: uppercase; padding: 0 2px 14px; }}
 
-  /* ── BARRA DE PESTAÑAS SUPERIOR (selector de módulo) ── */
-  div.st-key-novus_topnav {{
-      background: {WHITE};
-      border-bottom: 1px solid {BORDER};
-      margin: -1rem -1rem 1.1rem -1rem;
-      padding: 0 36px;
+  /* ── HEADER SUPERIOR (marca · pestañas · sesión) ── */
+  div.st-key-novus_header {{
+      background: linear-gradient(135deg, {DARK_BG} 0%, #162416 100%);
+      margin: 0 calc(-1 * var(--novus-pad)) 1.1rem calc(-1 * var(--novus-pad));
+      padding: 14px var(--novus-pad) 0;
   }}
+  div.st-key-novus_header [data-testid="stHorizontalBlock"] {{ align-items: center; }}
+  .header-brand {{ font-size: .98rem; font-weight: 700; color: {WHITE}; white-space: nowrap; }}
+  .header-brand span.sub {{ color: #9AADA9; font-weight: 300; }}
+  .header-badge {{
+      display: inline-block; margin-left: 10px; border: 1px solid rgba(93,187,99,.4);
+      border-radius: 20px; padding: 2px 10px; font-size: .62rem; font-weight: 600;
+      letter-spacing: 1px; text-transform: uppercase; color: {GREEN}; vertical-align: middle;
+  }}
+  .header-access {{
+      text-align: right; font-size: .68rem; color: #7A857D; margin-bottom: 6px;
+  }}
+  div.st-key-novus_header div[data-testid="stColumn"]:last-child {{ display: flex; flex-direction: column; align-items: flex-end; }}
+  div.st-key-novus_header div[data-testid="stColumn"]:last-child .stButton {{ width: auto; }}
+  div.st-key-novus_header div[data-testid="stColumn"]:last-child button {{
+      background: transparent !important; color: #9AADA9 !important;
+      border: 1px solid rgba(255,255,255,.16) !important; padding: 4px 12px !important;
+      font-size: .72rem !important;
+  }}
+  div.st-key-novus_header div[data-testid="stColumn"]:last-child button:hover {{
+      color: {WHITE} !important; border-color: rgba(255,255,255,.35) !important; background: transparent !important;
+  }}
+
+  /* ── SELECTOR DE MÓDULO COMO PESTAÑAS, AL CENTRO DEL HEADER ── */
   div.st-key-novus_topnav div[data-testid="stRadio"] > label {{ display: none !important; }}
   div.st-key-novus_topnav div[role="radiogroup"] {{
       gap: 4px !important; flex-wrap: nowrap !important; flex-direction: row !important;
+      justify-content: center !important;
   }}
   div.st-key-novus_topnav div[role="radiogroup"] label {{
       background: transparent !important;
       border: none !important;
       border-bottom: 3px solid transparent !important;
       border-radius: 0 !important;
-      padding: 16px 22px !important;
+      padding: 16px 20px !important;
       margin: 0 !important;
-      font-size: .92rem !important; font-weight: 600 !important;
+      font-size: .88rem !important; font-weight: 600 !important;
       letter-spacing: 0 !important; text-transform: none !important;
-      color: {GRAY_TEXT} !important;
+      color: #9AADA9 !important;
       transition: all .15s;
+      white-space: nowrap;
   }}
-  div.st-key-novus_topnav div[role="radiogroup"] label:hover {{ color: {DARK_TEXT} !important; }}
+  div.st-key-novus_topnav div[role="radiogroup"] label:hover {{ color: {WHITE} !important; }}
   div.st-key-novus_topnav div[role="radiogroup"] label:has(input:checked) {{
       border-bottom-color: {GREEN} !important;
   }}
@@ -426,7 +429,6 @@ st.markdown(f"""
   div.st-key-novus_topnav div[role="radiogroup"] label > div:first-child {{ display: none !important; }}
 
   #MainMenu, footer, header {{ visibility: hidden; height: 0; }}
-  .block-container {{ padding-top: 0 !important; padding-bottom: 1.5rem !important; }}
 </style>
 """, unsafe_allow_html=True)
 
@@ -514,26 +516,34 @@ M_DASH = "📊  Dashboard y métricas"
 M_CTAS = "📋  Seguimiento de apertura"
 M_FCI  = "💰  Suscripciones y rescates"
 
-st.sidebar.markdown(
-    '<div class="sidebar-brand">novus <span>asset management</span></div>'
-    '<div class="sidebar-tag">middle office</div>', unsafe_allow_html=True)
-
-# Selector de módulo como barra de pestañas arriba del contenido, en vez de
-# radio en el sidebar. El key="novus_topnav" del container es lo que el CSS
-# usa para pintar este radio como tabs (ver div.st-key-novus_topnav más arriba).
-with st.container(key="novus_topnav"):
-    modulo = st.radio("Contrapartes", [M_DASH, M_CTAS, M_FCI],
-                      horizontal=True, label_visibility="collapsed", key="nav_modulo")
-
-# Recordatorio discreto del estado de acceso, al pie del sidebar.
-st.sidebar.markdown(
-    '<div style="margin-top:22px;padding-top:12px;border-top:1px solid rgba(255,255,255,.08)">'
-    + ('<div style="font-size:.68rem;color:#7A857D">acceso · <span style="color:#5DBB63">'
-       'protegido con contraseña</span></div>'
-       if AUTH_ACTIVA else
-       '<div style="font-size:.68rem;color:#7A857D">acceso · <span style="color:#E8A020">'
-       'sin contraseña</span><br><span style="font-size:.62rem">quien tenga el link entra</span></div>')
-    + '</div>', unsafe_allow_html=True)
+# Sin sidebar: todo el header vive en una sola barra oscura arriba, con
+# marca a la izquierda, pestañas al centro y sesión a la derecha. El
+# key="novus_header" del container es lo que el CSS usa para pintar la
+# barra full-bleed (ver "HEADER SUPERIOR" en el bloque de estilos).
+with st.container(key="novus_header"):
+    hc1, hc2, hc3 = st.columns([1.1, 2, 1.1])
+    with hc1:
+        st.markdown(
+            '<div class="header-brand">novus <span class="sub">asset management</span>'
+            '<span class="header-badge">middle office</span></div>',
+            unsafe_allow_html=True)
+    with hc2:
+        with st.container(key="novus_topnav"):
+            modulo = st.radio("Contrapartes", [M_DASH, M_CTAS, M_FCI],
+                              horizontal=True, label_visibility="collapsed", key="nav_modulo")
+    with hc3:
+        st.markdown(
+            '<div class="header-access">acceso · <span style="color:#5DBB63">protegido con '
+            'contraseña</span></div>'
+            if AUTH_ACTIVA else
+            '<div class="header-access">acceso · <span style="color:#E8A020">sin contraseña'
+            '</span></div>',
+            unsafe_allow_html=True)
+        if AUTH_ACTIVA:
+            if st.button("Cerrar sesión", key="logout_header"):
+                for k in ("_auth_ok", "_intentos"):
+                    st.session_state.pop(k, None)
+                st.rerun()
 
 # ═══════════════════════════════════════════════════════════════
 # Se resuelve el módulo 2 primero y se corta con st.stop(), así el
@@ -1495,17 +1505,10 @@ if modulo == M_CTAS:
             st.error(f"No se pudo armar el Excel: {e}")
 
     # ── FOOTER ──────────────────────────────────────────────────────
-    # El botón de salir solo tiene sentido si hay contraseña configurada.
-    if AUTH_ACTIVA:
-        _, col_out2 = st.columns([5, 1])
-        with col_out2:
-            if st.button("Cerrar sesión", key="logout2"):
-                for k in ("_auth_ok", "_intentos"):
-                    st.session_state.pop(k, None)
-                st.rerun()
-
+    # El botón de salir vive en el header, arriba; acá solo queda la franja de marca.
     st.markdown(f"""
-    <div style="background:{DARK_BG}; margin: 1rem -1rem -1rem -1rem; padding: 16px 36px;
+    <div style="background:{DARK_BG}; margin: 1rem calc(-1 * var(--novus-pad)) -1rem calc(-1 * var(--novus-pad));
+                padding: 16px var(--novus-pad);
                 display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
       <div style="color:{GREEN}; font-size:.85rem; font-weight:600;">
         novus <span style="color:#9AADA9; font-weight:300;">asset management</span></div>
@@ -1567,6 +1570,10 @@ if modulo == M_FCI:
     # ── FILTROS ─────────────────────────────────────────────────────
     tipos_disp  = sorted(set(df_flujos_raw["Tipo"]) | set(df_aum_raw["Tipo"]))
     fondos_disp = sorted(set(df_flujos_raw["Fondo"]) | set(df_aum_raw["Fondo"]))
+    # Color estable por tipo de fondo: se define una sola vez acá y se
+    # reutiliza en el pie de participación y en los swatches de las tablas,
+    # así el mismo tipo siempre tiene el mismo color en toda la solapa.
+    TIPO_COLOR = {t: AGENT_PALETTE[i % len(AGENT_PALETTE)] for i, t in enumerate(tipos_disp)}
 
     with st.expander("🔍  Filtros  ·  vacío = todos", expanded=True):
         gc1, gc2, gc3 = st.columns([1, 1, 1.3])
@@ -1577,6 +1584,15 @@ if modulo == M_FCI:
         with gc3:
             f_fecha = st.date_input("Período", value=(FCI_MIN.date(), FCI_MAX.date()),
                                     min_value=FCI_MIN.date(), max_value=FCI_MAX.date(), key="fci_f_fecha")
+
+    # Los fondos Money Market / T+0 mueven muchísimo más volumen diario que
+    # el resto (el efectivo entra y sale todo el tiempo): este switch los
+    # saca de la vista para poder ver la dinámica de las demás estrategias
+    # sin que queden aplastadas en los gráficos y rankings.
+    MM_TIPOS = {"Money Market", "Money Market USDMEP"}
+    excluir_mm = st.checkbox("Excluir Money Market / T+0", key="fci_excluir_mm",
+                             help="Saca Novus Liquidez y Novus Dolar MM de esta vista para que no "
+                                  "tapen la dinámica del resto de los fondos.")
 
     fci_desde, fci_hasta = FCI_MIN, FCI_MAX
     if isinstance(f_fecha, (tuple, list)):
@@ -1593,6 +1609,8 @@ if modulo == M_FCI:
             d = d[d["Tipo"].isin(f_tipo)]
         if f_fondo:
             d = d[d["Fondo"].isin(f_fondo)]
+        if excluir_mm:
+            d = d[~d["Tipo"].isin(MM_TIPOS)]
         return d
 
     df_flujos = _filtrar_fci(df_flujos_raw)
@@ -1695,17 +1713,28 @@ if modulo == M_FCI:
     rank["Neto"] = rank["Suscripcion"] - rank["Rescate"]
     rank = rank.sort_values("Neto", ascending=False)
 
-    df_show(
-        rank.rename(columns={"Suscripcion": "Suscripciones", "Rescate": "Rescates"}),
-        hide_index=True, height=int(min(430, 45 + 35 * max(len(rank), 1))),
-        column_config={
-            "Fondo": st.column_config.TextColumn("Fondo", width="medium"),
-            "Tipo": st.column_config.TextColumn("Tipo", width="medium"),
-            "Suscripciones": st.column_config.NumberColumn("Suscripciones", format="$ %.0f"),
-            "Rescates": st.column_config.NumberColumn("Rescates", format="$ %.0f"),
-            "Neto": st.column_config.NumberColumn("Flujo neto", format="$ %.0f"),
-        },
-    )
+    def _monto_signed_html(v):
+        cls = "pos" if v >= 0 else "neg"
+        return f'<span class="{cls}">{fmt_usd(v)}</span>'
+
+    filas_rank = ""
+    for _, r in rank.iterrows():
+        sw = TIPO_COLOR.get(r["Tipo"], GREEN)
+        filas_rank += (
+            f'<tr><td><span class="swatch" style="background:{sw}"></span>{r["Fondo"]}</td>'
+            f'<td style="color:{GRAY_TEXT}">{r["Tipo"]}</td>'
+            f'<td>{fmt_usd(r["Suscripcion"])}</td>'
+            f'<td>{fmt_usd(r["Rescate"])}</td>'
+            f'<td>{_monto_signed_html(r["Neto"])}</td></tr>'
+        )
+    st.markdown(f"""
+    <div style="background:{WHITE};border:1px solid {BORDER};border-radius:10px;padding:12px 16px;">
+      <table class="var-table">
+        <thead><tr><th>Fondo</th><th>Tipo</th><th>Suscripciones</th><th>Rescates</th><th>Flujo neto</th></tr></thead>
+        <tbody>{filas_rank}</tbody>
+      </table>
+    </div>
+    """, unsafe_allow_html=True)
 
     # ── PATRIMONIO (AUM) ──────────────────────────────────────────────
     st.markdown('<div class="section-title" style="margin-top:22px">Patrimonio bajo administración</div>'
@@ -1742,10 +1771,23 @@ if modulo == M_FCI:
         share_tipo = (df_aum[df_aum["Fecha"] == ult_fecha]
                       .groupby("Tipo", as_index=False)["PatrimonioNeto_USD"].sum()
                       .sort_values("PatrimonioNeto_USD", ascending=False))
+        # Los tipos con menos del 2% del patrimonio se agrupan en "Otros":
+        # con 18 tipos posibles, las porciones chicas se pisaban las
+        # etiquetas entre sí y el gráfico quedaba ilegible.
+        total_share = share_tipo["PatrimonioNeto_USD"].sum()
+        share_tipo["Pct"] = share_tipo["PatrimonioNeto_USD"] / total_share if total_share else 0.0
+        grandes = share_tipo[share_tipo["Pct"] >= 0.02]
+        chicos = share_tipo[share_tipo["Pct"] < 0.02]
+        if len(chicos):
+            otros = pd.DataFrame([{"Tipo": "Otros", "PatrimonioNeto_USD": chicos["PatrimonioNeto_USD"].sum()}])
+            share_tipo = pd.concat([grandes[["Tipo", "PatrimonioNeto_USD"]], otros], ignore_index=True)
+        else:
+            share_tipo = grandes[["Tipo", "PatrimonioNeto_USD"]]
+        colores_share = [TIPO_COLOR.get(t, OTROS_COLOR) if t != "Otros" else OTROS_COLOR
+                         for t in share_tipo["Tipo"]]
         fig_share = go.Figure(go.Pie(
             labels=share_tipo["Tipo"], values=share_tipo["PatrimonioNeto_USD"], hole=0.58, sort=False,
-            marker=dict(colors=[AGENT_PALETTE[i % len(AGENT_PALETTE)] for i in range(len(share_tipo))],
-                        line=dict(color="white", width=2)),
+            marker=dict(colors=colores_share, line=dict(color="white", width=2)),
             texttemplate="%{percent:.1%}", textposition="inside",
             textfont=dict(size=10, family=FONT_FAMILY, color="white"),
             hovertemplate="<b>%{label}</b><br>%{percent:.2%}<br>USD %{value:,.0f}<extra></extra>",
@@ -1788,18 +1830,28 @@ if modulo == M_FCI:
     cruce = cruce.reset_index().rename(columns={"Neto": "Flujo Neto"}).sort_values(
         "Tasa de Rescate", ascending=False)
 
-    df_show(
-        cruce[["Fondo", "Tipo", "Flujo Neto", "Patrimonio Actual", "Tasa de Rescate", "Rendimiento Estimado"]],
-        hide_index=True, height=int(min(430, 45 + 35 * max(len(cruce), 1))),
-        column_config={
-            "Fondo": st.column_config.TextColumn("Fondo", width="medium"),
-            "Tipo": st.column_config.TextColumn("Tipo", width="medium"),
-            "Flujo Neto": st.column_config.NumberColumn("Flujo neto", format="$ %.0f"),
-            "Patrimonio Actual": st.column_config.NumberColumn("Patrimonio actual", format="$ %.0f"),
-            "Tasa de Rescate": st.column_config.NumberColumn("Tasa de rescate", format="%.1f%%"),
-            "Rendimiento Estimado": st.column_config.NumberColumn("Rendimiento estimado", format="$ %.0f"),
-        },
-    )
+    filas_cruce = ""
+    for _, r in cruce.iterrows():
+        sw = TIPO_COLOR.get(r["Tipo"], GREEN)
+        tasa = r["Tasa de Rescate"]
+        tasa_html = f"{tasa:,.1f}%" if pd.notna(tasa) else '<span class="nd">n/d</span>'
+        filas_cruce += (
+            f'<tr><td><span class="swatch" style="background:{sw}"></span>{r["Fondo"]}</td>'
+            f'<td style="color:{GRAY_TEXT}">{r["Tipo"]}</td>'
+            f'<td>{_monto_signed_html(r["Flujo Neto"])}</td>'
+            f'<td>{fmt_usd(r["Patrimonio Actual"])}</td>'
+            f'<td>{tasa_html}</td>'
+            f'<td>{_monto_signed_html(r["Rendimiento Estimado"])}</td></tr>'
+        )
+    st.markdown(f"""
+    <div style="background:{WHITE};border:1px solid {BORDER};border-radius:10px;padding:12px 16px;">
+      <table class="var-table">
+        <thead><tr><th>Fondo</th><th>Tipo</th><th>Flujo neto</th><th>Patrimonio actual</th>
+        <th>Tasa de rescate</th><th>Rendimiento estimado</th></tr></thead>
+        <tbody>{filas_cruce}</tbody>
+      </table>
+    </div>
+    """, unsafe_allow_html=True)
 
     # ── NOTA METODOLÓGICA + FOOTER ────────────────────────────────────
     st.markdown(f"""
@@ -1812,16 +1864,9 @@ if modulo == M_FCI:
     </div>
     """, unsafe_allow_html=True)
 
-    if AUTH_ACTIVA:
-        _, col_out3 = st.columns([5, 1])
-        with col_out3:
-            if st.button("Cerrar sesión", key="logout3"):
-                for k in ("_auth_ok", "_intentos"):
-                    st.session_state.pop(k, None)
-                st.rerun()
-
     st.markdown(f"""
-    <div style="background:{DARK_BG}; margin: 1rem -1rem -1rem -1rem; padding: 16px 36px;
+    <div style="background:{DARK_BG}; margin: 1rem calc(-1 * var(--novus-pad)) -1rem calc(-1 * var(--novus-pad));
+                padding: 16px var(--novus-pad);
                 display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
       <div style="color:{GREEN}; font-size:.85rem; font-weight:600;">
         novus <span style="color:#9AADA9; font-weight:300;">asset management</span></div>
@@ -2579,17 +2624,9 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# El botón de salir solo tiene sentido si hay contraseña configurada.
-if AUTH_ACTIVA:
-    _, col_out = st.columns([5, 1])
-    with col_out:
-        if st.button("Cerrar sesión", key="logout"):
-            for k in ("_auth_ok", "_intentos"):
-                st.session_state.pop(k, None)
-            st.rerun()
-
 st.markdown(f"""
-<div style="background:{DARK_BG}; margin: 1rem -1rem -1rem -1rem; padding: 16px 36px;
+<div style="background:{DARK_BG}; margin: 1rem calc(-1 * var(--novus-pad)) -1rem calc(-1 * var(--novus-pad));
+            padding: 16px var(--novus-pad);
             display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
   <div style="color:{GREEN}; font-size:.85rem; font-weight:600;">
     novus <span style="color:#9AADA9; font-weight:300;">asset management</span></div>
