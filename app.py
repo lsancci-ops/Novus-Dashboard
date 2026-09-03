@@ -147,7 +147,11 @@ st.markdown(f"""
       color: {GREEN}; text-transform: uppercase; margin-bottom: 6px;
   }}
   .novus-hero h1 {{ font-size: 1.8rem; font-weight: 300; color: {WHITE}; margin: 0 0 4px; }}
-  .novus-hero h1 span {{ color: {GREEN}; font-weight: 700; }}
+  /* Streamlit envuelve TODO el contenido del h1 en un <span> propio (para
+     el link de anclaje del encabezado). Si el selector fuera "h1 span" a
+     secas, pintaría ese span envolvente entero de verde en vez de solo la
+     palabra resaltada — por eso apunta a un span ANIDADO (el nuestro). */
+  .novus-hero h1 span span {{ color: {GREEN}; font-weight: 700; }}
   .novus-hero p {{ color: #9AADA9; font-size: .85rem; margin: 4px 0 12px; }}
   .novus-badge {{
       display: inline-block; border: 1px solid rgba(93,187,99,.4);
@@ -523,9 +527,9 @@ if AUTH_ACTIVA and not login_gate():
 # ═══════════════════════════════════════════════════════════════
 # NAVEGACIÓN
 # ═══════════════════════════════════════════════════════════════
-M_DASH = "📊  Dashboard y métricas"
-M_CTAS = "📋  Seguimiento de apertura"
-M_FCI  = "💰  Suscripciones y rescates"
+M_DASH = "📊  Contrapartes"
+M_CTAS = "📋  Onboarding"
+M_FCI  = "💰  Flujos & Fondos"
 
 # Sin sidebar: todo el header vive en una sola barra oscura arriba, con
 # marca a la izquierda, pestañas al centro y sesión a la derecha. El
@@ -540,7 +544,7 @@ with st.container(key="novus_header"):
             unsafe_allow_html=True)
     with hc2:
         with st.container(key="novus_topnav"):
-            modulo = st.radio("Contrapartes", [M_DASH, M_CTAS, M_FCI],
+            modulo = st.radio("Navegación", [M_FCI, M_DASH, M_CTAS],
                               horizontal=True, label_visibility="collapsed", key="nav_modulo")
     with hc3:
         st.markdown(
@@ -780,8 +784,8 @@ if modulo == M_CTAS:
     st.markdown(f"""
     <div class="novus-hero">
       <div class="novus-eyebrow">middle office</div>
-      <h1>apertura y seguimiento de <span>cuentas</span> fci</h1>
-      <p>Estado de onboarding de cuentas comitentes en ALyCs y cuentas remuneradas en bancos.</p>
+      <h1><span>onboarding</span></h1>
+      <p>Seguimiento de altas de cuentas comitentes en ALyCs y cuentas remuneradas en bancos.</p>
       <span class="novus-badge">{'edición habilitada' if MODO_EDICION else 'solo lectura'}</span>
     </div>
     """, unsafe_allow_html=True)
@@ -1614,8 +1618,8 @@ if modulo == M_FCI:
     st.markdown(f"""
     <div class="novus-hero">
       <div class="novus-eyebrow">middle office</div>
-      <h1>suscripciones y <span>rescates</span></h1>
-      <p>Flujo de entradas y salidas de los FCI, y evolución de patrimonio bajo administración.</p>
+      <h1>flujos &amp; <span>fondos</span></h1>
+      <p>Suscripciones, rescates y evolución de patrimonio.</p>
     </div>
     """, unsafe_allow_html=True)
 
@@ -2131,8 +2135,8 @@ badge_parcial = (
 st.markdown(f"""
 <div class="novus-hero">
   <div class="novus-eyebrow">middle office</div>
-  <h1>control de <span>contrapartes</span> y flujo de agentes</h1>
-  <p>Volumen operado, participación de mercado, costos de ejecución y variación por asset category (USD MEP/CCL).</p>
+  <h1><span>contrapartes</span></h1>
+  <p>Control de límites, riesgo y exposición.</p>
   <span class="novus-badge">datos al {HIST_MAX.strftime('%d/%m/%Y')}</span>{badge_parcial}
 </div>
 """, unsafe_allow_html=True)
