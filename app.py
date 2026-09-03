@@ -92,6 +92,37 @@ def df_show(data, **kw):
         st.dataframe(data, hide_index=True)
 
 
+def fmt_usd(v):
+    """Monto en USD, soporta negativos, cero y NaN."""
+    if v is None:
+        return "—"
+    try:
+        v = float(v)
+    except (TypeError, ValueError):
+        return "—"
+    if np.isnan(v):
+        return "—"
+    s, a = ("-" if v < 0 else ""), abs(v)
+    if a >= 1e9:
+        return f"{s}USD {a/1e9:,.2f}B"
+    if a >= 1e6:
+        return f"{s}USD {a/1e6:,.1f}M"
+    if a >= 1e3:
+        return f"{s}USD {a/1e3:,.1f}K"
+    return f"{s}USD {a:,.0f}"
+
+
+def fmt_pct_html(pct, nd_reason=None):
+    """% con signo y color, o 'n/d' con tooltip explicando por qué."""
+    if nd_reason:
+        return f'<span class="nd" title="{nd_reason}">n/d</span>'
+    if pct is None or (isinstance(pct, float) and np.isnan(pct)):
+        return '<span class="nd">—</span>'
+    cls = "pos" if pct >= 0 else "neg"
+    sign = "+" if pct >= 0 else ""
+    return f'<span class="{cls}">{sign}{pct:.1f}%</span>'
+
+
 # ═══════════════════════════════════════════════════════════════
 # CSS
 # ═══════════════════════════════════════════════════════════════
@@ -481,6 +512,7 @@ if AUTH_ACTIVA and not login_gate():
 # ═══════════════════════════════════════════════════════════════
 M_DASH = "📊  Dashboard y métricas"
 M_CTAS = "📋  Seguimiento de apertura"
+M_FCI  = "💰  Suscripciones y rescates"
 
 st.sidebar.markdown(
     '<div class="sidebar-brand">novus <span>asset management</span></div>'
@@ -490,7 +522,7 @@ st.sidebar.markdown(
 # radio en el sidebar. El key="novus_topnav" del container es lo que el CSS
 # usa para pintar este radio como tabs (ver div.st-key-novus_topnav más arriba).
 with st.container(key="novus_topnav"):
-    modulo = st.radio("Contrapartes", [M_DASH, M_CTAS],
+    modulo = st.radio("Contrapartes", [M_DASH, M_CTAS, M_FCI],
                       horizontal=True, label_visibility="collapsed", key="nav_modulo")
 
 # Recordatorio discreto del estado de acceso, al pie del sidebar.
@@ -1484,6 +1516,317 @@ if modulo == M_CTAS:
     st.stop()
 
 
+if modulo == M_FCI:
+    # ═══════════════════════════════════════════════════════════════
+    # MÓDULO 3 — SUSCRIPCIONES Y RESCATES DE FCI
+    # ═══════════════════════════════════════════════════════════════
+    FCI_FLUJOS_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fci_flujos.csv")
+    FCI_AUM_PATH    = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fci_patrimonio.csv")
+
+    @st.cache_data(ttl=600, show_spinner="Cargando suscripciones y rescates…")
+    def _cargar_fci_flujos(path, _mtime):
+        df = pd.read_csv(path, parse_dates=["Fecha"])
+        for c in ("Fondo", "Tipo", "Movimiento", "Moneda"):
+            df[c] = df[c].astype(str).str.strip()
+        for c in ("Cantidad_Cuotapartes", "Valor_Cuotaparte", "Importe", "Importe_USD"):
+            df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0.0)
+        df["MesInicio"] = df["Fecha"].dt.to_period("M").dt.to_timestamp()
+        return df.sort_values("Fecha").reset_index(drop=True)
+
+    @st.cache_data(ttl=600, show_spinner="Cargando patrimonio de FCI…")
+    def _cargar_fci_aum(path, _mtime):
+        df = pd.read_csv(path, parse_dates=["Fecha"])
+        for c in ("Fondo", "Tipo", "Moneda"):
+            df[c] = df[c].astype(str).str.strip()
+        for c in ("PatrimonioNeto", "PatrimonioNeto_USD"):
+            df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0.0)
+        return df.sort_values("Fecha").reset_index(drop=True)
+
+    st.markdown(f"""
+    <div class="novus-hero">
+      <div class="novus-eyebrow">middle office</div>
+      <h1>suscripciones y <span>rescates</span></h1>
+      <p>Flujo de entradas y salidas de los FCI, y evolución de patrimonio bajo administración.</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    if not os.path.exists(FCI_FLUJOS_PATH) or not os.path.exists(FCI_AUM_PATH):
+        st.warning("Todavía no están cargados `fci_flujos.csv` y/o `fci_patrimonio.csv` junto a `app.py`.")
+        st.stop()
+
+    df_flujos_raw = _cargar_fci_flujos(FCI_FLUJOS_PATH, os.path.getmtime(FCI_FLUJOS_PATH))
+    df_aum_raw    = _cargar_fci_aum(FCI_AUM_PATH, os.path.getmtime(FCI_AUM_PATH))
+
+    if df_flujos_raw.empty or df_aum_raw.empty:
+        st.error("Alguna de las bases de FCI está vacía.")
+        st.stop()
+
+    FCI_MIN = min(df_flujos_raw["Fecha"].min(), df_aum_raw["Fecha"].min())
+    FCI_MAX = max(df_flujos_raw["Fecha"].max(), df_aum_raw["Fecha"].max())
+
+    # ── FILTROS ─────────────────────────────────────────────────────
+    tipos_disp  = sorted(set(df_flujos_raw["Tipo"]) | set(df_aum_raw["Tipo"]))
+    fondos_disp = sorted(set(df_flujos_raw["Fondo"]) | set(df_aum_raw["Fondo"]))
+
+    with st.expander("🔍  Filtros  ·  vacío = todos", expanded=True):
+        gc1, gc2, gc3 = st.columns([1, 1, 1.3])
+        with gc1:
+            f_tipo = st.multiselect("Tipo de fondo", tipos_disp, placeholder="Todos", key="fci_f_tipo")
+        with gc2:
+            f_fondo = st.multiselect("Fondo", fondos_disp, placeholder="Todos", key="fci_f_fondo")
+        with gc3:
+            f_fecha = st.date_input("Período", value=(FCI_MIN.date(), FCI_MAX.date()),
+                                    min_value=FCI_MIN.date(), max_value=FCI_MAX.date(), key="fci_f_fecha")
+
+    fci_desde, fci_hasta = FCI_MIN, FCI_MAX
+    if isinstance(f_fecha, (tuple, list)):
+        if len(f_fecha) == 2:
+            fci_desde, fci_hasta = pd.Timestamp(f_fecha[0]), pd.Timestamp(f_fecha[1])
+        elif len(f_fecha) == 1:
+            fci_desde = pd.Timestamp(f_fecha[0])
+    elif f_fecha:
+        fci_desde = pd.Timestamp(f_fecha)
+
+    def _filtrar_fci(df):
+        d = df[(df["Fecha"] >= fci_desde) & (df["Fecha"] <= fci_hasta)]
+        if f_tipo:
+            d = d[d["Tipo"].isin(f_tipo)]
+        if f_fondo:
+            d = d[d["Fondo"].isin(f_fondo)]
+        return d
+
+    df_flujos = _filtrar_fci(df_flujos_raw)
+    df_aum    = _filtrar_fci(df_aum_raw)
+
+    if df_flujos.empty or df_aum.empty:
+        st.warning("Ningún dato coincide con los filtros elegidos.")
+        st.stop()
+
+    # ── KPIs DE FLUJO ───────────────────────────────────────────────
+    susc = df_flujos.loc[df_flujos["Movimiento"] == "Suscripcion", "Importe_USD"].sum()
+    resc = df_flujos.loc[df_flujos["Movimiento"] == "Rescate", "Importe_USD"].sum()
+    neto = susc - resc
+
+    st.markdown('<div class="section-title">Flujo del período</div>'
+                '<div class="section-underline"></div>', unsafe_allow_html=True)
+
+    k1, k2, k3, k4 = st.columns(4)
+    with k1:
+        st.markdown(f'<div class="kpi-card accent"><div class="kpi-label">🟢 Suscripciones</div>'
+                    f'<div class="kpi-value">{fmt_usd(susc)}</div>'
+                    f'<div class="kpi-sub">bruto, convertido a USD</div></div>', unsafe_allow_html=True)
+    with k2:
+        st.markdown(f'<div class="kpi-card"><div class="kpi-label">🔴 Rescates</div>'
+                    f'<div class="kpi-value" style="color:{RED}">{fmt_usd(resc)}</div>'
+                    f'<div class="kpi-sub">bruto, convertido a USD</div></div>', unsafe_allow_html=True)
+    with k3:
+        color_neto = GREEN_DIM if neto >= 0 else RED
+        st.markdown(f'<div class="kpi-card"><div class="kpi-label">Flujo neto</div>'
+                    f'<div class="kpi-value" style="color:{color_neto}">{fmt_usd(neto)}</div>'
+                    f'<div class="kpi-sub">suscripciones − rescates</div></div>', unsafe_allow_html=True)
+    with k4:
+        st.markdown(f'<div class="kpi-card"><div class="kpi-label">Movimientos</div>'
+                    f'<div class="kpi-value sm">{len(df_flujos):,}</div>'
+                    f'<div class="kpi-sub">{df_flujos["Fondo"].nunique()} fondos con actividad</div></div>',
+                    unsafe_allow_html=True)
+
+    # ── FLUJO MENSUAL (espejo) + NETO ACUMULADO ──────────────────────
+    st.markdown('<div class="section-title" style="margin-top:22px">Evolución del flujo</div>'
+                '<div class="section-underline"></div>', unsafe_allow_html=True)
+
+    fc1, fc2 = st.columns(2)
+    with fc1:
+        st.markdown('<div class="chart-label">Suscripciones vs. rescates por mes</div>', unsafe_allow_html=True)
+        mensual = (df_flujos.groupby(["MesInicio", "Movimiento"])["Importe_USD"].sum()
+                   .unstack(fill_value=0.0).sort_index())
+        for col in ("Suscripcion", "Rescate"):
+            if col not in mensual.columns:
+                mensual[col] = 0.0
+        fig_mensual = go.Figure()
+        fig_mensual.add_trace(go.Bar(
+            x=mensual.index, y=mensual["Suscripcion"] / 1e6, name="Suscripciones",
+            marker_color=GREEN, hovertemplate="$%{y:,.1f}M<extra>Suscripciones</extra>"))
+        fig_mensual.add_trace(go.Bar(
+            x=mensual.index, y=-mensual["Rescate"] / 1e6, name="Rescates",
+            marker_color=RED, hovertemplate="$%{y:,.1f}M<extra>Rescates</extra>"))
+        fig_mensual.update_layout(
+            **BASE_LAYOUT, height=302, barmode="relative", hovermode="x unified",
+            xaxis=dict(showgrid=False, tickformat="%b<br>%Y",
+                       tickfont=dict(size=8.5, color=GRAY_TEXT, family=FONT_FAMILY)),
+            yaxis=dict(gridcolor="#EDEFED", zeroline=True, zerolinecolor="#D8DED9",
+                       tickprefix="$", ticksuffix="M",
+                       tickfont=dict(size=9, color=GRAY_TEXT, family=FONT_FAMILY)),
+            legend=dict(orientation="h", y=-0.14, x=0.5, xanchor="center",
+                        font=dict(size=9.5, family=FONT_FAMILY), title_text=""),
+            margin=dict(l=0, r=10, t=8, b=46),
+        )
+        chart(fig_mensual, key="fci_bar_mensual")
+    with fc2:
+        st.markdown('<div class="chart-label">Flujo neto acumulado</div>', unsafe_allow_html=True)
+        diario = (df_flujos.groupby(["Fecha", "Movimiento"])["Importe_USD"].sum()
+                  .unstack(fill_value=0.0).sort_index())
+        for col in ("Suscripcion", "Rescate"):
+            if col not in diario.columns:
+                diario[col] = 0.0
+        diario["Acumulado"] = (diario["Suscripcion"] - diario["Rescate"]).cumsum()
+        fig_acum = go.Figure(go.Scatter(
+            x=diario.index, y=diario["Acumulado"] / 1e6, mode="lines", fill="tozeroy",
+            line=dict(color=GREEN, width=2), fillcolor="rgba(93,187,99,.12)",
+            hovertemplate="$%{y:,.1f}M<extra></extra>"))
+        fig_acum.update_layout(
+            **BASE_LAYOUT, height=302,
+            xaxis=dict(showgrid=False, tickfont=dict(size=8.5, color=GRAY_TEXT, family=FONT_FAMILY)),
+            yaxis=dict(gridcolor="#EDEFED", zeroline=True, zerolinecolor="#D8DED9",
+                       tickprefix="$", ticksuffix="M",
+                       tickfont=dict(size=9, color=GRAY_TEXT, family=FONT_FAMILY)),
+            margin=dict(l=0, r=10, t=8, b=10),
+        )
+        chart(fig_acum, key="fci_line_acumulado")
+
+    # ── RANKING DE FONDOS POR FLUJO ───────────────────────────────────
+    st.markdown('<div class="section-title" style="margin-top:22px">Ranking de fondos por flujo</div>'
+                '<div class="section-underline"></div>', unsafe_allow_html=True)
+
+    rank = (df_flujos.groupby(["Fondo", "Tipo", "Movimiento"])["Importe_USD"].sum()
+            .unstack(fill_value=0.0).reset_index())
+    for col in ("Suscripcion", "Rescate"):
+        if col not in rank.columns:
+            rank[col] = 0.0
+    rank["Neto"] = rank["Suscripcion"] - rank["Rescate"]
+    rank = rank.sort_values("Neto", ascending=False)
+
+    df_show(
+        rank.rename(columns={"Suscripcion": "Suscripciones", "Rescate": "Rescates"}),
+        hide_index=True, height=int(min(430, 45 + 35 * max(len(rank), 1))),
+        column_config={
+            "Fondo": st.column_config.TextColumn("Fondo", width="medium"),
+            "Tipo": st.column_config.TextColumn("Tipo", width="medium"),
+            "Suscripciones": st.column_config.NumberColumn("Suscripciones", format="$ %.0f"),
+            "Rescates": st.column_config.NumberColumn("Rescates", format="$ %.0f"),
+            "Neto": st.column_config.NumberColumn("Flujo neto", format="$ %.0f"),
+        },
+    )
+
+    # ── PATRIMONIO (AUM) ──────────────────────────────────────────────
+    st.markdown('<div class="section-title" style="margin-top:22px">Patrimonio bajo administración</div>'
+                '<div class="section-underline"></div>', unsafe_allow_html=True)
+
+    ult_fecha = df_aum["Fecha"].max()
+    aum_total_actual = df_aum.loc[df_aum["Fecha"] == ult_fecha, "PatrimonioNeto_USD"].sum()
+    st.markdown(f'<div class="kpi-card accent" style="max-width:360px">'
+                f'<div class="kpi-label">Patrimonio total actual</div>'
+                f'<div class="kpi-value">{fmt_usd(aum_total_actual)}</div>'
+                f'<div class="kpi-sub">al {ult_fecha:%d/%m/%Y} · USD equivalente</div></div>',
+                unsafe_allow_html=True)
+    st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
+
+    a1, a2 = st.columns([55, 45])
+    with a1:
+        st.markdown('<div class="chart-label">Evolución del patrimonio total (USD)</div>', unsafe_allow_html=True)
+        aum_diario = df_aum.groupby("Fecha", as_index=False)["PatrimonioNeto_USD"].sum()
+        fig_aum = go.Figure(go.Scatter(
+            x=aum_diario["Fecha"], y=aum_diario["PatrimonioNeto_USD"] / 1e6, mode="lines",
+            line=dict(color=GREEN_DIM, width=2), fill="tozeroy", fillcolor="rgba(45,106,79,.10)",
+            hovertemplate="$%{y:,.1f}M<extra></extra>"))
+        fig_aum.update_layout(
+            **BASE_LAYOUT, height=290,
+            xaxis=dict(showgrid=False, tickfont=dict(size=8.5, color=GRAY_TEXT, family=FONT_FAMILY)),
+            yaxis=dict(gridcolor="#EDEFED", tickprefix="$", ticksuffix="M",
+                       tickfont=dict(size=9, color=GRAY_TEXT, family=FONT_FAMILY)),
+            margin=dict(l=0, r=10, t=8, b=10),
+        )
+        chart(fig_aum, key="fci_aum_evol")
+    with a2:
+        st.markdown('<div class="chart-label">Participación por tipo de fondo (patrimonio actual)</div>',
+                    unsafe_allow_html=True)
+        share_tipo = (df_aum[df_aum["Fecha"] == ult_fecha]
+                      .groupby("Tipo", as_index=False)["PatrimonioNeto_USD"].sum()
+                      .sort_values("PatrimonioNeto_USD", ascending=False))
+        fig_share = go.Figure(go.Pie(
+            labels=share_tipo["Tipo"], values=share_tipo["PatrimonioNeto_USD"], hole=0.58, sort=False,
+            marker=dict(colors=[AGENT_PALETTE[i % len(AGENT_PALETTE)] for i in range(len(share_tipo))],
+                        line=dict(color="white", width=2)),
+            texttemplate="%{percent:.1%}", textposition="inside",
+            textfont=dict(size=10, family=FONT_FAMILY, color="white"),
+            hovertemplate="<b>%{label}</b><br>%{percent:.2%}<br>USD %{value:,.0f}<extra></extra>",
+        ))
+        fig_share.update_layout(
+            **BASE_LAYOUT, height=290, showlegend=True,
+            legend=dict(orientation="h", y=-0.10, x=0.5, xanchor="center",
+                        font=dict(size=8.5, family=FONT_FAMILY)),
+            margin=dict(l=0, r=0, t=6, b=6),
+        )
+        chart(fig_share, key="fci_pie_share")
+
+    # ── TASA DE RESCATE Y CRECIMIENTO ORGÁNICO VS. RENDIMIENTO ────────
+    st.markdown('<div class="section-title" style="margin-top:22px">Tasa de rescate y crecimiento orgánico</div>'
+                '<div class="section-underline"></div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="note">La <b>tasa de rescate</b> es Rescates / Patrimonio promedio del período: '
+        'normaliza por tamaño de fondo, así un fondo grande y uno chico se pueden comparar. El '
+        '<b>flujo neto</b> es el crecimiento orgánico (plata que entra o sale); el <b>rendimiento '
+        'estimado</b> es lo que queda de la variación de patrimonio una vez descontado ese flujo — '
+        'es una aproximación, no un cálculo exacto de retorno de cartera.</div>', unsafe_allow_html=True)
+
+    aum_ini = (df_aum[df_aum["Fecha"] == df_aum["Fecha"].min()]
+               .groupby("Fondo")["PatrimonioNeto_USD"].sum())
+    aum_fin = (df_aum[df_aum["Fecha"] == ult_fecha]
+               .groupby("Fondo")["PatrimonioNeto_USD"].sum())
+    aum_prom = aum_ini.add(aum_fin, fill_value=0.0) / 2
+
+    cruce = rank.set_index("Fondo")[["Tipo", "Suscripcion", "Rescate", "Neto"]].copy()
+    cruce["Patrimonio Actual"] = aum_fin.reindex(cruce.index).fillna(0.0)
+    pat_prom = aum_prom.reindex(cruce.index).fillna(0.0)
+    cruce["Tasa de Rescate"] = np.where(pat_prom > 0, cruce["Rescate"] / pat_prom * 100, np.nan)
+    variacion = aum_fin.reindex(cruce.index).fillna(0.0) - aum_ini.reindex(cruce.index).fillna(0.0)
+    cruce["Rendimiento Estimado"] = variacion - cruce["Neto"]
+    cruce = cruce.reset_index().rename(columns={"Neto": "Flujo Neto"}).sort_values(
+        "Tasa de Rescate", ascending=False)
+
+    df_show(
+        cruce[["Fondo", "Tipo", "Flujo Neto", "Patrimonio Actual", "Tasa de Rescate", "Rendimiento Estimado"]],
+        hide_index=True, height=int(min(430, 45 + 35 * max(len(cruce), 1))),
+        column_config={
+            "Fondo": st.column_config.TextColumn("Fondo", width="medium"),
+            "Tipo": st.column_config.TextColumn("Tipo", width="medium"),
+            "Flujo Neto": st.column_config.NumberColumn("Flujo neto", format="$ %.0f"),
+            "Patrimonio Actual": st.column_config.NumberColumn("Patrimonio actual", format="$ %.0f"),
+            "Tasa de Rescate": st.column_config.NumberColumn("Tasa de rescate", format="%.1f%%"),
+            "Rendimiento Estimado": st.column_config.NumberColumn("Rendimiento estimado", format="$ %.0f"),
+        },
+    )
+
+    # ── NOTA METODOLÓGICA + FOOTER ────────────────────────────────────
+    st.markdown(f"""
+    <div class="note" style="margin-top:16px">
+      <b>Metodología.</b> Montos convertidos a USD: los pesos usan el tipo de cambio del día de cada
+      movimiento o fecha de patrimonio; los fondos en dólares (MEP/CCL) se toman tal cual, sin
+      conversión. Los fondos lanzados después del inicio de la serie tienen menos historia — no es
+      un error de datos. El patrimonio promedio usado para la tasa de rescate es el promedio simple
+      entre el patrimonio al inicio y al final del período filtrado.
+    </div>
+    """, unsafe_allow_html=True)
+
+    if AUTH_ACTIVA:
+        _, col_out3 = st.columns([5, 1])
+        with col_out3:
+            if st.button("Cerrar sesión", key="logout3"):
+                for k in ("_auth_ok", "_intentos"):
+                    st.session_state.pop(k, None)
+                st.rerun()
+
+    st.markdown(f"""
+    <div style="background:{DARK_BG}; margin: 1rem -1rem -1rem -1rem; padding: 16px 36px;
+                display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+      <div style="color:{GREEN}; font-size:.85rem; font-weight:600;">
+        novus <span style="color:#9AADA9; font-weight:300;">asset management</span></div>
+      <div style="color:#777; font-size:.7rem;">middle office · suscripciones y rescates de FCI</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.stop()
+
+
 # ═══════════════════════════════════════════════════════════════
 # MÓDULO 1 — DASHBOARD DE CONTRAPARTES Y FLUJO DE AGENTES
 # ═══════════════════════════════════════════════════════════════
@@ -1533,37 +1876,9 @@ MES_PARCIAL = HIST_MAX != (HIST_MAX + pd.offsets.MonthEnd(0))
 # ═══════════════════════════════════════════════════════════════
 # HELPERS
 # ═══════════════════════════════════════════════════════════════
-def fmt_usd(v):
-    """Monto en USD, soporta negativos, cero y NaN."""
-    if v is None:
-        return "—"
-    try:
-        v = float(v)
-    except (TypeError, ValueError):
-        return "—"
-    if np.isnan(v):
-        return "—"
-    s, a = ("-" if v < 0 else ""), abs(v)
-    if a >= 1e9:
-        return f"{s}USD {a/1e9:,.2f}B"
-    if a >= 1e6:
-        return f"{s}USD {a/1e6:,.1f}M"
-    if a >= 1e3:
-        return f"{s}USD {a/1e3:,.1f}K"
-    return f"{s}USD {a:,.0f}"
-
-
-def fmt_pct_html(pct, nd_reason=None):
-    """% con signo y color, o 'n/d' con tooltip explicando por qué."""
-    if nd_reason:
-        return f'<span class="nd" title="{nd_reason}">n/d</span>'
-    if pct is None or (isinstance(pct, float) and np.isnan(pct)):
-        return '<span class="nd">—</span>'
-    cls = "pos" if pct >= 0 else "neg"
-    sign = "+" if pct >= 0 else ""
-    return f'<span class="{cls}">{sign}{pct:.1f}%</span>'
-
-
+# fmt_usd y fmt_pct_html se movieron al principio del archivo (junto a
+# chart()/df_show()) porque el módulo de FCI, que corre antes que este,
+# también los necesita.
 def bps(gastos, volumen):
     try:
         return (float(gastos) / float(volumen) * 10_000) if volumen and float(volumen) > 0 else np.nan
