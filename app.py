@@ -267,15 +267,15 @@ st.markdown(f"""
   }}
 
   /* ── STEPPER DE ETAPA (onboarding) ── */
+  /* El color de cada nodo/línea se pisa inline por paso (ver _stepper_html);
+     estas reglas son solo el look base para los pasos todavía no alcanzados. */
   .novus-stepper {{ display: flex; align-items: center; gap: 0; margin-bottom: 4px; }}
   .novus-stepper .nodo {{
       width: 9px; height: 9px; border-radius: 50%; background: #e5e7eb; flex: none;
   }}
-  .novus-stepper .nodo.hecho, .novus-stepper .nodo.activo {{ background: #10b981; }}
   .novus-stepper .linea {{ flex: 1 1 16px; height: 2px; background: #e5e7eb; min-width: 10px; }}
-  .novus-stepper .linea.hecho {{ background: #10b981; }}
   .stepper-caption {{ font-size: .7rem; color: {GRAY_TEXT}; }}
-  .stepper-caption b {{ color: {DARK_TEXT}; font-weight: 600; }}
+  .stepper-caption b {{ font-weight: 600; }}
 
   /* ── TABS ── */
   .stTabs [data-baseweb="tab-list"] {{ gap: 4px; background: transparent; border-bottom: 1px solid {BORDER}; }}
@@ -1336,6 +1336,17 @@ if modulo == M_CTAS:
     k = 0
 
     # ── STEPPER DE ETAPA ──────────────────────────────────────────────
+    # Un color propio por paso (no todos verde parejo): así se distingue de
+    # un vistazo en qué documentación está cada cuenta. El último paso
+    # ("Habilitada para operar") siempre es este verde, sea cual sea el
+    # total de pasos de la hoja (4 en ALyCs, 5 en Bancos).
+    PASO_COLORES = ["#f59e0b", "#3b82f6", "#8b5cf6", "#06b6d4"]
+    PASO_COLOR_FINAL = "#10b981"
+    PENDIENTE_GRIS = "#e5e7eb"
+
+    def _color_paso(i, total):
+        return PASO_COLOR_FINAL if i == total - 1 else PASO_COLORES[i % len(PASO_COLORES)]
+
     def _stepper_html(etapa_actual, etapas):
         """None si la etapa no aplica (vacía o fuera de lista, típicamente
         una cuenta Rechazada/De baja) — ahí se muestra el badge de Estado
@@ -1345,11 +1356,15 @@ if modulo == M_CTAS:
         idx, total = etapas.index(etapa_actual), len(etapas)
         nodos = []
         for i in range(total):
-            nodos.append(f'<span class="nodo {"hecho" if i < idx else ("activo" if i == idx else "")}"></span>')
+            color_nodo = _color_paso(i, total) if i <= idx else PENDIENTE_GRIS
+            nodos.append(f'<span class="nodo" style="background:{color_nodo}"></span>')
             if i < total - 1:
-                nodos.append(f'<span class="linea {"hecho" if i < idx else ""}"></span>')
+                color_linea = _color_paso(i, total) if i < idx else PENDIENTE_GRIS
+                nodos.append(f'<span class="linea" style="background:{color_linea}"></span>')
+        color_caption = _color_paso(idx, total)
         return (f'<div class="novus-stepper">{"".join(nodos)}</div>'
-                f'<div class="stepper-caption"><b>{etapa_actual}</b> · Paso {idx + 1}/{total}</div>')
+                f'<div class="stepper-caption"><b style="color:{color_caption}">{etapa_actual}</b> '
+                f'· Paso {idx + 1}/{total}</div>')
 
     FILAS_POR_PAGINA = 25
 
