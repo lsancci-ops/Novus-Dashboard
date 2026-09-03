@@ -266,6 +266,17 @@ st.markdown(f"""
       margin-right: 7px; vertical-align: middle;
   }}
 
+  /* ── STEPPER DE ETAPA (onboarding) ── */
+  .novus-stepper {{ display: flex; align-items: center; gap: 0; margin-bottom: 4px; }}
+  .novus-stepper .nodo {{
+      width: 9px; height: 9px; border-radius: 50%; background: #e5e7eb; flex: none;
+  }}
+  .novus-stepper .nodo.hecho, .novus-stepper .nodo.activo {{ background: #10b981; }}
+  .novus-stepper .linea {{ flex: 1 1 16px; height: 2px; background: #e5e7eb; min-width: 10px; }}
+  .novus-stepper .linea.hecho {{ background: #10b981; }}
+  .stepper-caption {{ font-size: .7rem; color: {GRAY_TEXT}; }}
+  .stepper-caption b {{ color: {DARK_TEXT}; font-weight: 600; }}
+
   /* ── TABS ── */
   .stTabs [data-baseweb="tab-list"] {{ gap: 4px; background: transparent; border-bottom: 1px solid {BORDER}; }}
   .stTabs [data-baseweb="tab"] {{
@@ -596,6 +607,12 @@ if modulo == M_CTAS:
     HOJA_FCI   = "Lista FCI"
     ESTADOS    = ["En proceso", "Abierta", "Rechazada", "De baja"]
 
+    # Pipeline documental de onboarding (columna "Etapa", nueva — no existía
+    # en el Excel). Es más granular que "Estado" y se muestra como stepper.
+    ETAPAS_COM = ["1. Inicio / Solicitud", "2. Doc SG", "3. Doc SD", "4. Habilitada para operar"]
+    ETAPAS_REM = ["1. Inicio / Solicitud", "2. Doc SG", "3. Doc SD", "4. Exención ARCA",
+                  "5. Habilitada para operar"]
+
     def _cfg(clave, default=None):
         try:
             v = st.secrets.get(clave)
@@ -810,6 +827,69 @@ if modulo == M_CTAS:
     df_rem, av2 = _normalizar(df_rem, "Remuneradas")
     avisos = av1 + av2
 
+    # ── COLUMNAS NUEVAS DE ONBOARDING (Etapa, CBU, Alias) ────────────
+    # No existían en el Excel. Se crean en memoria si faltan y quedan
+    # firmes recién cuando se guarda por primera vez con la etapa cargada.
+    def _asegurar_etapa(df, etapas):
+        if df is None or df.empty:
+            return df
+        d = df.copy()
+        if "Etapa" in d.columns:
+            d["Etapa"] = d["Etapa"].astype(str).str.strip()
+            d.loc[~d["Etapa"].isin(etapas), "Etapa"] = ""
+            return d
+        # Migración de las cuentas existentes: es una aproximación, no hay
+        # forma de saber en qué paso documental está cada una hoy.
+        # "Abierta" -> última etapa (ya está operativa). "En proceso" o
+        # vacío -> primera etapa. "Rechazada"/"De baja" no tienen paso: el
+        # stepper no aplica a una cuenta rechazada o dada de baja.
+        def _default(estado):
+            e = str(estado).strip() if pd.notna(estado) else ""
+            if e == "Abierta":
+                return etapas[-1]
+            if e in ("", "En proceso"):
+                return etapas[0]
+            return ""
+        d["Etapa"] = d["Estado"].map(_default) if "Estado" in d.columns else etapas[0]
+        return d
+
+    def _asegurar_columnas(df, columnas):
+        if df is None or df.empty:
+            return df
+        d = df.copy()
+        for c in columnas:
+            if c not in d.columns:
+                d[c] = ""
+        return d
+
+    df_com = _asegurar_etapa(df_com, ETAPAS_COM)
+    df_rem = _asegurar_etapa(df_rem, ETAPAS_REM)
+    df_rem = _asegurar_columnas(df_rem, ["CBU", "Alias"])
+
+    # ── EDICIONES PENDIENTES DESDE EL MODAL ──────────────────────────
+    # Se acumulan en sesión (mismo patrón que "nuevas_ctas") y se aplican acá
+    # antes de mostrar, así el stepper refleja el cambio al instante y viajan
+    # al Excel cuando se aprieta "Guardar cambios" más abajo.
+    if "ediciones_ctas" not in st.session_state:
+        st.session_state["ediciones_ctas"] = {"com": {}, "rem": {}}
+
+    def _aplicar_ediciones(df, clave):
+        ediciones = st.session_state["ediciones_ctas"].get(clave) or {}
+        if df is None or not ediciones:
+            return df
+        d = df.copy()
+        for idx, cambios in ediciones.items():
+            if idx not in d.index:
+                continue
+            for col, val in cambios.items():
+                if col not in d.columns:
+                    d[col] = ""
+                d.loc[idx, col] = val
+        return d
+
+    df_com = _aplicar_ediciones(df_com, "com")
+    df_rem = _aplicar_ediciones(df_rem, "rem")
+
     # ── DETECCIÓN DE COLUMNAS ───────────────────────────────────────
     # El Excel real de Novus llama a la columna de fondo "FCI", no "Fondo".
     # En lugar de asumir un nombre, se busca cuál existe. Si mañana cambia,
@@ -829,16 +909,14 @@ if modulo == M_CTAS:
     ETIQ_FONDO = COL_FONDO or "Fondo"
 
     # ── ESTADOS CON COLOR ───────────────────────────────────────────
-    # st.data_editor no admite pintar celdas (no soporta Styler), así que el
-    # color va en el valor: se muestra "🟢 Abierta" mientras se edita y se
-    # guarda "Abierta" limpio en el Excel. La vista consolidada, que es de
-    # solo lectura, sí usa Styler con fondo de color real.
+    # EST_ICONO se usa como badge de respaldo cuando una fila no tiene una
+    # Etapa válida para el stepper (Rechazada/De baja). EST_FONDO/EST_TEXTO
+    # pintan la Vista consolidada, que es de solo lectura y sí admite Styler.
     EST_ICONO = {"Abierta": "🟢", "En proceso": "🟡", "Rechazada": "🔴", "De baja": "⚪"}
     EST_FONDO = {"Abierta": "#E9F6EC", "En proceso": "#FFF6E6",
                  "Rechazada": "#FDECEC", "De baja": "#F0F2F0"}
     EST_TEXTO = {"Abierta": GREEN_DIM, "En proceso": "#9A6A10",
                  "Rechazada": "#B03030", "De baja": "#77817A"}
-    ESTADOS_VIS = [f"{EST_ICONO[e]} {e}" for e in ESTADOS]
 
     def _limpiar_estado(v):
         """Saca el emoji del principio y deja el texto puro."""
@@ -916,16 +994,6 @@ if modulo == M_CTAS:
             lambda v: mapa.get(str(v).strip(), v) if pd.notna(v) else v)
         return d
 
-    def a_vista(df):
-        """Copia con el Estado decorado, para mostrar en el editor."""
-        if df is None or df.empty or "Estado" not in df.columns:
-            return df
-        d = df.copy()
-        d["Estado"] = d["Estado"].map(
-            lambda v: f"{EST_ICONO.get(str(v).strip(), '⚫')} {str(v).strip()}"
-            if pd.notna(v) and str(v).strip() else v)
-        return d
-
     def a_datos(df):
         """Copia con el Estado limpio, para guardar."""
         if df is None or df.empty or "Estado" not in df.columns:
@@ -985,17 +1053,9 @@ if modulo == M_CTAS:
         return d
 
     # ── COLUMNAS QUE NO SE MUESTRAN ─────────────────────────────────
-    # Se ocultan de las tablas pero NO se borran: `column_order` es solo
-    # visual y el editor sigue devolviendo la columna con sus valores, así
-    # que al guardar el dato viaja intacto al Excel.
+    # Se ocultan de la Vista consolidada pero no se borran de las hojas.
     # Para volver a mostrar la fecha, vaciá esta tupla: OCULTAR = ()
     OCULTAR = ("fecha",)
-
-    def _visibles(df):
-        if df is None or df.empty:
-            return None
-        return [c for c in df.columns
-                if not any(p in str(c).lower() for p in OCULTAR)]
 
     # ── CUENTAS NUEVAS PENDIENTES DE GUARDAR ────────────────────────
     # Las altas se acumulan en la sesión y se suman a la hoja antes de
@@ -1165,13 +1225,6 @@ if modulo == M_CTAS:
     st.markdown('<div class="section-title">Detalle</div>'
                 '<div class="section-underline"></div>', unsafe_allow_html=True)
 
-    if filtro_filas:
-        st.markdown(
-            '<div class="note"><b>Con filtros de fila activos podés cambiar celdas, pero no '
-            'agregar ni borrar filas desde la grilla.</b> Al guardar, lo editado vuelve a su fila '
-            'original del Excel y el resto queda intacto. Para dar de alta una cuenta usá el '
-            'formulario de abajo, que funciona con filtros puestos o sin ellos.</div>',
-            unsafe_allow_html=True)
 
     # ── ALTA DE UNA CUENTA NUEVA ────────────────────────────────────
     # Con 700+ filas, buscar la fila vacía del final de la grilla es
@@ -1232,11 +1285,6 @@ if modulo == M_CTAS:
             f'<b>Guardar cambios</b> abajo para que queden en el repo.</div>',
             unsafe_allow_html=True)
 
-    cfg = {
-        "Estado": st.column_config.SelectboxColumn(
-            "Estado", options=ESTADOS_VIS, required=False, width="medium",
-            help="Elegí el estado de la lista"),
-    }
     # El FCI pasa a desplegable SOLO cuando todos los valores ya están en el
     # catálogo. Si quedan variantes sueltas, un SelectboxColumn las tomaría
     # como inválidas y podría vaciarlas: se deja como texto hasta unificar.
@@ -1246,17 +1294,9 @@ if modulo == M_CTAS:
             if d is not None and not d.empty and COL_FONDO in d.columns:
                 fci_sueltos |= {v for v in d[COL_FONDO].dropna().astype(str).str.strip()
                                 if v and v not in CATALOGO}
-    if COL_FONDO:
-        if CATALOGO and not fci_sueltos:
-            cfg[COL_FONDO] = st.column_config.SelectboxColumn(
-                COL_FONDO, options=CATALOGO, required=False, width="medium",
-                help="Elegí un FCI del catálogo")
-        else:
-            cfg[COL_FONDO] = st.column_config.TextColumn(COL_FONDO, width="medium")
-    modo_filas = "fixed" if filtro_filas else "dynamic"
 
-    # Se arranca con las hojas COMPLETAS: si un editor no se renderiza porque
-    # el filtro de tipo lo escondió, su hoja se guarda tal cual estaba.
+    # Se arranca con las hojas COMPLETAS: los cambios del modal ya están
+    # aplicados sobre df_com/df_rem más arriba, así que alcanza con esto.
     res_com, res_rem, res_fci = df_com, df_rem, df_fci
 
     nombres = []
@@ -1272,25 +1312,162 @@ if modulo == M_CTAS:
     tabs = list(st.tabs(nombres))
     k = 0
 
-    def _editar(df_full, vis, clave, etiqueta):
-        st.markdown(f'<div class="chart-label">{etiqueta}</div>', unsafe_allow_html=True)
-        ed = st.data_editor(a_vista(vis), column_config=cfg, num_rows=modo_filas,
-                            hide_index=True, key=clave, column_order=_visibles(vis))
-        ed = a_datos(ed)
-        if filtro_filas:
-            base = df_full.copy()
-            if len(ed):
-                base.loc[ed.index, ed.columns] = ed
-            return base
-        return ed
+    # ── STEPPER DE ETAPA ──────────────────────────────────────────────
+    def _stepper_html(etapa_actual, etapas):
+        """None si la etapa no aplica (vacía o fuera de lista, típicamente
+        una cuenta Rechazada/De baja) — ahí se muestra el badge de Estado
+        en su lugar, no tendría sentido un "paso X de N"."""
+        if not etapa_actual or etapa_actual not in etapas:
+            return None
+        idx, total = etapas.index(etapa_actual), len(etapas)
+        nodos = []
+        for i in range(total):
+            nodos.append(f'<span class="nodo {"hecho" if i < idx else ("activo" if i == idx else "")}"></span>')
+            if i < total - 1:
+                nodos.append(f'<span class="linea {"hecho" if i < idx else ""}"></span>')
+        return (f'<div class="novus-stepper">{"".join(nodos)}</div>'
+                f'<div class="stepper-caption"><b>{etapa_actual}</b> · Paso {idx + 1}/{total}</div>')
+
+    FILAS_POR_PAGINA = 25
+
+    def _tabla_onboarding(vis, etapas, clave):
+        """Chips de etapa + tabla paginada con stepper por fila. Clic en una
+        fila abre el modal de edición (st.dialog)."""
+        chip = st.radio("Etapa", ["Todos"] + etapas, horizontal=True,
+                        label_visibility="collapsed", key=f"{clave}_chip")
+        d = vis if chip == "Todos" else vis[vis["Etapa"] == chip]
+
+        if d.empty:
+            st.info("Ninguna cuenta coincide con este filtro.")
+            return
+
+        n_paginas = max(1, -(-len(d) // FILAS_POR_PAGINA))
+        pag_key = f"{clave}_pagina"
+        pag_actual = min(st.session_state.get(pag_key, 1), n_paginas)
+        pc1, pc2 = st.columns([1, 4])
+        with pc1:
+            pag_actual = st.number_input(f"Página (de {n_paginas})", min_value=1,
+                                         max_value=n_paginas, value=pag_actual, step=1,
+                                         key=f"{clave}_pag_input")
+        st.session_state[pag_key] = pag_actual
+
+        ini = (pag_actual - 1) * FILAS_POR_PAGINA
+        pagina = d.iloc[ini: ini + FILAS_POR_PAGINA]
+
+        hc = st.columns([2.2, 1.6, 1.6, 2.8, 0.7])
+        for c, t in zip(hc, ["Contraparte", ETIQ_FONDO, "Tipo", "Etapa", ""]):
+            c.markdown(f'<div class="chart-label" style="margin-bottom:2px">{t}</div>',
+                       unsafe_allow_html=True)
+
+        for idx, row in pagina.iterrows():
+            c1, c2, c3, c4, c5 = st.columns([2.2, 1.6, 1.6, 2.8, 0.7])
+            c1.markdown(f'<div style="padding-top:9px;font-weight:600">'
+                       f'{row.get("Contraparte", "—") or "—"}</div>', unsafe_allow_html=True)
+            c2.markdown(f'<div style="padding-top:9px">'
+                       f'{(row.get(COL_FONDO, "—") if COL_FONDO else "—") or "—"}</div>',
+                       unsafe_allow_html=True)
+            c3.markdown(f'<div style="padding-top:9px">'
+                       f'{(row.get(COL_TIPO, "—") if COL_TIPO else "—") or "—"}</div>',
+                       unsafe_allow_html=True)
+            etapa_val = str(row.get("Etapa", "")).strip()
+            stepper = _stepper_html(etapa_val, etapas)
+            if stepper:
+                c4.markdown(stepper, unsafe_allow_html=True)
+            else:
+                estado_val = str(row.get("Estado", "")).strip()
+                c4.markdown(f'<div style="padding-top:7px">'
+                           f'{EST_ICONO.get(estado_val, "⚫")} {estado_val or "—"}</div>',
+                           unsafe_allow_html=True)
+            if c5.button("✏️", key=f"{clave}_edit_{idx}", help="Editar esta cuenta"):
+                st.session_state["_abrir_modal"] = (clave, idx)
+                st.rerun()
+
+    # ── MODAL DE EDICIÓN (sin drawer nativo en Streamlit: st.dialog es la
+    # alternativa robusta — ventana centrada, sin recargar la página) ────
+    @st.dialog("Editar cuenta")
+    def _modal_editar_cuenta():
+        clave, idx = st.session_state["_abrir_modal"]
+        df_ref = df_com if clave == "com" else df_rem
+        etapas = ETAPAS_COM if clave == "com" else ETAPAS_REM
+        if idx not in df_ref.index:
+            st.warning("Esta cuenta ya no está disponible (¿se filtró o se borró?).")
+            if st.button("Cerrar"):
+                del st.session_state["_abrir_modal"]
+                st.rerun()
+            return
+        row = df_ref.loc[idx]
+
+        st.markdown(f"**Contraparte:** {row.get('Contraparte', '—') or '—'}")
+        st.markdown(f"**{ETIQ_FONDO}:** {(row.get(COL_FONDO, '—') if COL_FONDO else '—') or '—'}")
+        st.markdown(f"**Tipo de cuenta:** {(row.get(COL_TIPO, '—') if COL_TIPO else '—') or '—'}")
+
+        etapa_actual = str(row.get("Etapa", "")).strip()
+        idx_etapa = etapas.index(etapa_actual) if etapa_actual in etapas else 0
+        nueva_etapa = st.selectbox("Etapa", etapas, index=idx_etapa, key="modal_etapa")
+
+        obs_actual = str(row.get("Observaciones", "")) if pd.notna(row.get("Observaciones")) else ""
+        nueva_obs = st.text_area("Observaciones / Comentarios", value=obs_actual, key="modal_obs")
+
+        nuevo_com = None
+        if clave == "com" and "Comentarios" in df_ref.columns:
+            com_actual = str(row.get("Comentarios", "")) if pd.notna(row.get("Comentarios")) else ""
+            nuevo_com = st.text_area("Comentarios internos", value=com_actual, key="modal_com")
+
+        nuevo_ncuenta = nuevo_cbu = nuevo_alias = None
+        cbu_invalido = False
+        if nueva_etapa == etapas[-1]:
+            st.markdown("**Habilitada para operar — completá el dato de cuenta:**")
+            if clave == "com":
+                actual_n = str(row.get("N° de Cuenta", "")) if pd.notna(row.get("N° de Cuenta")) else ""
+                nuevo_ncuenta = st.text_input("N° de Cuenta Comitente", value=actual_n, key="modal_ncuenta")
+            else:
+                actual_cbu = str(row.get("CBU", "")) if pd.notna(row.get("CBU")) else ""
+                actual_alias = str(row.get("Alias", "")) if pd.notna(row.get("Alias")) else ""
+                nuevo_cbu = st.text_input("CBU Cuenta Remunerada", value=actual_cbu,
+                                          max_chars=22, key="modal_cbu")
+                cbu_invalido = bool(nuevo_cbu) and not (nuevo_cbu.isdigit() and len(nuevo_cbu) == 22)
+                if cbu_invalido:
+                    st.caption("⚠ El CBU debe tener 22 dígitos numéricos.")
+                nuevo_alias = st.text_input("Alias", value=actual_alias, key="modal_alias")
+
+        bc1, bc2 = st.columns(2)
+        with bc1:
+            guardar_modal = st.button("Guardar cambios", key="modal_guardar",
+                                      type="primary", disabled=cbu_invalido)
+        with bc2:
+            cancelar_modal = st.button("Cancelar", key="modal_cancelar")
+
+        if guardar_modal:
+            cambios = {"Etapa": nueva_etapa, "Observaciones": nueva_obs}
+            if nuevo_com is not None:
+                cambios["Comentarios"] = nuevo_com
+            if nuevo_ncuenta is not None:
+                cambios["N° de Cuenta"] = nuevo_ncuenta
+            if nuevo_cbu is not None:
+                cambios["CBU"] = nuevo_cbu
+            if nuevo_alias is not None:
+                cambios["Alias"] = nuevo_alias
+            st.session_state["ediciones_ctas"][clave][idx] = cambios
+            del st.session_state["_abrir_modal"]
+            st.rerun()
+        if cancelar_modal:
+            del st.session_state["_abrir_modal"]
+            st.rerun()
+
+    if "_abrir_modal" in st.session_state:
+        _modal_editar_cuenta()
 
     if ver_com:
         with tabs[k]:
-            res_com = _editar(df_com, vis_com, "ed_com", f"{n_com} cuentas comitentes")
+            st.markdown(f'<div class="chart-label">{n_com} cuentas comitentes</div>',
+                       unsafe_allow_html=True)
+            _tabla_onboarding(vis_com, ETAPAS_COM, "com")
         k += 1
     if ver_rem:
         with tabs[k]:
-            res_rem = _editar(df_rem, vis_rem, "ed_rem", f"{n_rem} cuentas remuneradas")
+            st.markdown(f'<div class="chart-label">{n_rem} cuentas remuneradas</div>',
+                       unsafe_allow_html=True)
+            _tabla_onboarding(vis_rem, ETAPAS_REM, "rem")
         k += 1
 
     # ── VISTA CONSOLIDADA (solo lectura, con fondo de color por estado) ──
