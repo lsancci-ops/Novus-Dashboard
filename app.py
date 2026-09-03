@@ -1333,6 +1333,11 @@ if modulo == M_CTAS:
     def _tabla_onboarding(vis, etapas, clave):
         """Chips de etapa + tabla paginada con stepper por fila. Clic en una
         fila abre el modal de edición (st.dialog)."""
+        # La columna de fondo no se llama igual en las dos hojas (Comitentes
+        # usa "FCI", Remuneradas usa "Fondo") — se resuelve por esta hoja
+        # puntual, no con el COL_FONDO global (que solo pega con Comitentes).
+        col_fondo_local = _primera_col(CAND_FONDO, vis)
+
         chip = st.radio("Etapa", ["Todos"] + etapas, horizontal=True,
                         label_visibility="collapsed", key=f"{clave}_chip")
         d = vis if chip == "Todos" else vis[vis["Etapa"] == chip]
@@ -1355,7 +1360,7 @@ if modulo == M_CTAS:
         pagina = d.iloc[ini: ini + FILAS_POR_PAGINA]
 
         hc = st.columns([2.2, 1.6, 1.6, 2.8, 0.7])
-        for c, t in zip(hc, ["Contraparte", ETIQ_FONDO, "Tipo", "Etapa", ""]):
+        for c, t in zip(hc, ["Contraparte", col_fondo_local or "Fondo", "Tipo", "Etapa", ""]):
             c.markdown(f'<div class="chart-label" style="margin-bottom:2px">{t}</div>',
                        unsafe_allow_html=True)
 
@@ -1364,7 +1369,7 @@ if modulo == M_CTAS:
             c1.markdown(f'<div style="padding-top:9px;font-weight:600">'
                        f'{row.get("Contraparte", "—") or "—"}</div>', unsafe_allow_html=True)
             c2.markdown(f'<div style="padding-top:9px">'
-                       f'{(row.get(COL_FONDO, "—") if COL_FONDO else "—") or "—"}</div>',
+                       f'{(row.get(col_fondo_local, "—") if col_fondo_local else "—") or "—"}</div>',
                        unsafe_allow_html=True)
             c3.markdown(f'<div style="padding-top:9px">'
                        f'{(row.get(COL_TIPO, "—") if COL_TIPO else "—") or "—"}</div>',
@@ -1396,9 +1401,11 @@ if modulo == M_CTAS:
                 st.rerun()
             return
         row = df_ref.loc[idx]
+        col_fondo_local = _primera_col(CAND_FONDO, df_ref)
 
         st.markdown(f"**Contraparte:** {row.get('Contraparte', '—') or '—'}")
-        st.markdown(f"**{ETIQ_FONDO}:** {(row.get(COL_FONDO, '—') if COL_FONDO else '—') or '—'}")
+        st.markdown(f"**{col_fondo_local or 'Fondo'}:** "
+                   f"{(row.get(col_fondo_local, '—') if col_fondo_local else '—') or '—'}")
         st.markdown(f"**Tipo de cuenta:** {(row.get(COL_TIPO, '—') if COL_TIPO else '—') or '—'}")
 
         etapa_actual = str(row.get("Etapa", "")).strip()
