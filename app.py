@@ -418,7 +418,18 @@ st.markdown(f"""
       transition: all .15s;
       white-space: nowrap;
   }}
+  /* El texto de cada pestaña vive en un <p> interno que Streamlit pinta
+     con su propio color por defecto (oscuro), que pisa la herencia del
+     <label> — sin esto, el texto queda invisible sobre el header oscuro. */
+  div.st-key-novus_topnav div[role="radiogroup"] label div,
+  div.st-key-novus_topnav div[role="radiogroup"] label p {{
+      color: #9AADA9 !important;
+  }}
   div.st-key-novus_topnav div[role="radiogroup"] label:hover {{ color: {WHITE} !important; }}
+  div.st-key-novus_topnav div[role="radiogroup"] label:hover div,
+  div.st-key-novus_topnav div[role="radiogroup"] label:hover p {{
+      color: {WHITE} !important;
+  }}
   div.st-key-novus_topnav div[role="radiogroup"] label:has(input:checked) {{
       border-bottom-color: {GREEN} !important;
   }}
