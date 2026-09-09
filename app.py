@@ -454,6 +454,118 @@ st.markdown(f"""
   }}
   div.st-key-novus_topnav div[role="radiogroup"] label > div:first-child {{ display: none !important; }}
 
+  /* ── BOTONES DEL MODAL ──
+     Ocupan todo el ancho de su columna: así quedan del mismo tamaño y
+     alineados entre sí, en vez de dos botones sueltos de ancho distinto. */
+  div[data-testid="stDialog"] div[data-testid="stColumn"] .stButton,
+  div[data-testid="stDialog"] div[data-testid="stColumn"] .stButton button {{
+      width: 100% !important;
+  }}
+
+  /* ── TABLAS ANCHAS ──
+     Cualquier tabla HTML propia scrollea sola en horizontal antes de
+     romper el layout de la página en pantallas chicas. */
+  .tabla-scroll {{ overflow-x: auto; -webkit-overflow-scrolling: touch; }}
+
+  /* ── FILA DE LA TABLA DE ONBOARDING ──
+     Grid propio de 4 celdas: en pantalla grande van una al lado de la otra
+     y en celular pasa a una sola columna, mostrando la etiqueta de cada
+     campo (data-label) que en desktop la da el encabezado. */
+  .fila-onb {{
+      display: grid;
+      grid-template-columns: 2.2fr 1.6fr 1.6fr 2.8fr;
+      gap: 12px; align-items: center; min-height: 40px;
+      font-size: .84rem; color: {DARK_TEXT};
+      border-bottom: 1px solid #F0F2F0;
+  }}
+  .fila-onb .celda {{ min-width: 0; overflow-wrap: anywhere; }}
+  .fila-onb .celda::before {{ content: attr(data-label); display: none; }}
+  .fila-onb-encab {{
+      border-bottom: 1px solid {BORDER}; min-height: 0; padding-bottom: 4px;
+      font-size: .63rem; font-weight: 700; letter-spacing: 1px;
+      text-transform: uppercase; color: {GRAY_TEXT};
+  }}
+
+  /* ═══════════════ RESPONSIVE ═══════════════ */
+  /* Notebook / tablet horizontal */
+  @media (max-width: 1250px) {{
+      :root {{ --novus-pad: 22px; }}
+      .novus-hero h1 {{ font-size: 1.5rem; }}
+      .kpi-value {{ font-size: 1.3rem; }}
+      .kpi-value.sm {{ font-size: 1.08rem; }}
+      div.st-key-novus_topnav div[role="radiogroup"] label {{
+          padding: 13px 12px !important; font-size: .81rem !important;
+      }}
+      .var-table {{ font-size: .74rem; }}
+      /* La cadena de 11 columnas no entra: se esconden los signos y las
+         tarjetas se reparten en varias filas en vez de partir palabras. */
+      div.st-key-novus_cadena [data-testid="stHorizontalBlock"] {{
+          flex-wrap: wrap !important; row-gap: 10px;
+      }}
+      div.st-key-novus_cadena div[data-testid="stColumn"] {{
+          flex: 1 1 30% !important; min-width: 150px !important;
+      }}
+      div.st-key-novus_cadena div[data-testid="stColumn"]:nth-child(even) {{
+          display: none !important;
+      }}
+      .cadena-op {{ display: none !important; }}
+  }}
+
+  /* Header apilado: la marca, las 3 pestañas y el estado de sesión no
+     conviven en una sola línea por debajo de ~1000px (el badge se montaba
+     encima de las pestañas). */
+  @media (max-width: 1000px) {{
+      div.st-key-novus_header {{ padding: 12px var(--novus-pad) 10px; }}
+      div.st-key-novus_header [data-testid="stHorizontalBlock"] {{ flex-wrap: wrap; }}
+      div.st-key-novus_header div[data-testid="stColumn"] {{
+          min-width: 100% !important; flex: 1 1 100% !important;
+      }}
+      div.st-key-novus_header div[data-testid="stColumn"]:last-child {{
+          align-items: center !important; margin-top: 4px;
+      }}
+      .header-brand {{ text-align: center; font-size: .92rem; }}
+      .header-access {{ text-align: center; margin-bottom: 4px; }}
+      /* Las pestañas se scrollean en horizontal en vez de desbordar */
+      div.st-key-novus_topnav div[role="radiogroup"] {{
+          overflow-x: auto; justify-content: flex-start !important;
+          -webkit-overflow-scrolling: touch; padding-bottom: 2px;
+      }}
+  }}
+
+  /* Celular */
+  @media (max-width: 780px) {{
+      :root {{ --novus-pad: 14px; }}
+      div.st-key-novus_topnav div[role="radiogroup"] label {{
+          padding: 11px 12px !important; font-size: .78rem !important;
+      }}
+      .novus-hero {{ padding: 18px var(--novus-pad) 16px; }}
+      .novus-hero h1 {{ font-size: 1.22rem; }}
+      .novus-hero p {{ font-size: .78rem; }}
+      .section-title {{ font-size: 1rem; }}
+      .kpi-card {{ padding: 12px 14px; }}
+      .kpi-value {{ font-size: 1.18rem; }}
+      .kpi-value.sm {{ font-size: 1rem; }}
+      .var-table {{ font-size: .7rem; }}
+      .var-table th, .var-table td {{ padding: 6px 4px; }}
+      /* Apiladas de a una, las tarjetas de la cadena van a ancho completo */
+      div.st-key-novus_cadena div[data-testid="stColumn"] {{
+          flex: 1 1 100% !important;
+      }}
+
+      /* ── TABLA DE ONBOARDING EN CELULAR ──
+         La fila pasa a una sola columna y cada campo muestra su etiqueta
+         (el encabezado se esconde porque ya no alinea nada). */
+      .fila-onb {{
+          grid-template-columns: 1fr; gap: 2px;
+          padding: 8px 0; min-height: 0;
+      }}
+      .fila-onb .celda::before {{
+          display: inline-block; min-width: 78px; font-size: .58rem; font-weight: 700;
+          letter-spacing: .8px; text-transform: uppercase; color: {GRAY_TEXT};
+      }}
+      .fila-onb-encab {{ display: none !important; }}
+  }}
+
   #MainMenu, footer, header {{ visibility: hidden; height: 0; }}
 </style>
 """, unsafe_allow_html=True)
@@ -547,7 +659,7 @@ M_FCI  = "💰  Flujos & Fondos"
 # key="novus_header" del container es lo que el CSS usa para pintar la
 # barra full-bleed (ver "HEADER SUPERIOR" en el bloque de estilos).
 with st.container(key="novus_header"):
-    hc1, hc2, hc3 = st.columns([1.1, 2, 1.1])
+    hc1, hc2, hc3 = st.columns([1.1, 2, 1.1], vertical_alignment="center")
     with hc1:
         st.markdown(
             '<div class="header-brand">novus <span class="sub">asset management</span>'
@@ -1397,31 +1509,38 @@ if modulo == M_CTAS:
         ini = (pag_actual - 1) * FILAS_POR_PAGINA
         pagina = d.iloc[ini: ini + FILAS_POR_PAGINA]
 
-        hc = st.columns([2.2, 1.6, 1.6, 2.8, 0.7])
-        for c, t in zip(hc, ["Contraparte", col_fondo_local or "Fondo", "Tipo", "Etapa", ""]):
-            c.markdown(f'<div class="chart-label" style="margin-bottom:2px">{t}</div>',
-                       unsafe_allow_html=True)
+        etiq_fondo_col = col_fondo_local or "Fondo"
+
+        # Cada fila es UN solo bloque HTML con grid propio (más el botón en
+        # su columna). Antes eran 5 columnas de Streamlit por fila y al
+        # apilarse en celular sus contenedores internos colapsaban a ~5px y
+        # el texto se montaba sobre la fila siguiente. Con un grid propio el
+        # reflow a una columna lo maneja el CSS y no depende de Streamlit.
+        st.markdown(
+            f'<div class="fila-onb fila-onb-encab">'
+            f'<div class="celda">Contraparte</div><div class="celda">{etiq_fondo_col}</div>'
+            f'<div class="celda">Tipo</div><div class="celda">Etapa</div></div>',
+            unsafe_allow_html=True)
 
         for idx, row in pagina.iterrows():
-            c1, c2, c3, c4, c5 = st.columns([2.2, 1.6, 1.6, 2.8, 0.7])
-            c1.markdown(f'<div style="padding-top:9px;font-weight:600">'
-                       f'{row.get("Contraparte", "—") or "—"}</div>', unsafe_allow_html=True)
-            c2.markdown(f'<div style="padding-top:9px">'
-                       f'{(row.get(col_fondo_local, "—") if col_fondo_local else "—") or "—"}</div>',
-                       unsafe_allow_html=True)
-            c3.markdown(f'<div style="padding-top:9px">'
-                       f'{(row.get(COL_TIPO, "—") if COL_TIPO else "—") or "—"}</div>',
-                       unsafe_allow_html=True)
             etapa_val = str(row.get("Etapa", "")).strip()
             stepper = _stepper_html(etapa_val, etapas)
-            if stepper:
-                c4.markdown(stepper, unsafe_allow_html=True)
-            else:
+            if not stepper:
                 estado_val = str(row.get("Estado", "")).strip()
-                c4.markdown(f'<div style="padding-top:7px">'
-                           f'{EST_ICONO.get(estado_val, "⚫")} {estado_val or "—"}</div>',
-                           unsafe_allow_html=True)
-            if c5.button("✏️", key=f"{clave}_edit_{idx}", help="Editar esta cuenta"):
+                stepper = f'{EST_ICONO.get(estado_val, "⚫")} {estado_val or "—"}'
+
+            c_info, c_btn = st.columns([12, 1], vertical_alignment="center")
+            c_info.markdown(
+                f'<div class="fila-onb">'
+                f'<div class="celda" data-label="Contraparte">'
+                f'<b>{row.get("Contraparte", "—") or "—"}</b></div>'
+                f'<div class="celda" data-label="{etiq_fondo_col}">'
+                f'{(row.get(col_fondo_local, "—") if col_fondo_local else "—") or "—"}</div>'
+                f'<div class="celda" data-label="Tipo">'
+                f'{(row.get(COL_TIPO, "—") if COL_TIPO else "—") or "—"}</div>'
+                f'<div class="celda" data-label="Etapa">{stepper}</div>'
+                f'</div>', unsafe_allow_html=True)
+            if c_btn.button("✏️", key=f"{clave}_edit_{idx}", help="Editar esta cuenta"):
                 st.session_state["_abrir_modal"] = (clave, idx)
                 st.rerun()
 
@@ -1691,7 +1810,7 @@ if modulo == M_CTAS:
                 '<div class="section-underline"></div>', unsafe_allow_html=True)
 
     if MODO_EDICION:
-        g1, g2, _g3 = st.columns([1.4, 1.1, 3])
+        g1, g2, _g3 = st.columns([1.4, 1.1, 3], vertical_alignment="center")
         with g1:
             iniciales = st.text_input("Tus iniciales", max_chars=6, placeholder="LS",
                                       label_visibility="collapsed", key="firma")
@@ -1960,11 +2079,19 @@ if modulo == M_FCI:
                     unsafe_allow_html=True)
 
     def _op_cadena(simbolo):
-        st.markdown(f'<div style="display:flex;align-items:center;justify-content:center;'
-                    f'height:64px;font-size:1.3rem;font-weight:700;color:{GRAY_TEXT};">{simbolo}</div>',
+        # La clase cadena-op es la que el CSS esconde en pantallas chicas,
+        # donde las tarjetas se apilan y el signo ya no ubica nada.
+        st.markdown(f'<div class="cadena-op" style="text-align:center;font-size:1.3rem;'
+                    f'font-weight:700;color:{GRAY_TEXT};">{simbolo}</div>',
                     unsafe_allow_html=True)
 
-    cad = st.columns([2, 0.4, 2, 0.4, 2, 0.4, 2, 0.4, 2.3, 0.4, 2])
+    # El container con key es lo que le permite al CSS hacer que esta cadena
+    # de 11 columnas se acomode en varias filas en pantallas medianas/chicas
+    # (ver "RESPONSIVE" en los estilos) en vez de partir las palabras.
+    cadena_box = st.container(key="novus_cadena")
+    with cadena_box:
+        cad = st.columns([2, 0.4, 2, 0.4, 2, 0.4, 2, 0.4, 2.3, 0.4, 2],
+                         vertical_alignment="center")
     with cad[0]:  _celda_cadena("Patrimonio inicial", pat_ini_total)
     with cad[1]:  _op_cadena("+")
     with cad[2]:  _celda_cadena("Suscripciones", susc, GREEN_DIM)
@@ -2225,7 +2352,7 @@ if modulo == M_FCI:
         "Tasa de rescate mensual": "Tasa Rescate Mensual", "Efecto mercado + TC": "Efecto Mercado + TC",
         "Fondo (A-Z)": "Fondo",
     }
-    oc1, oc2 = st.columns([3, 1])
+    oc1, oc2 = st.columns([3, 1], vertical_alignment="bottom")
     with oc1:
         orden_label = st.selectbox("Ordenar por", list(ORDEN_OPCIONES.keys()), index=0, key="fci_orden_col")
     with oc2:
@@ -2248,7 +2375,8 @@ if modulo == M_FCI:
             f'<td>{_monto_signed_html(r["Efecto Mercado + TC"])}</td></tr>'
         )
     st.markdown(f"""
-    <div style="background:{WHITE};border:1px solid {BORDER};border-radius:10px;padding:12px 16px;overflow-x:auto;">
+    <div class="tabla-scroll" style="background:{WHITE};border:1px solid {BORDER};
+                border-radius:10px;padding:12px 16px;">
       <table class="var-table">
         <thead><tr><th>Fondo</th><th>Tipo</th><th>Patrimonio actual</th><th>Suscripciones</th>
         <th>Rescates</th><th>Flujo neto</th><th>Tasa rescate (prom. mensual)</th>
@@ -2715,7 +2843,8 @@ with col_var:
 
     ths = "".join(f"<th>{d}d</th>" for d in VENTANAS_DIAS)
     st.markdown(f"""
-    <div style="background:{WHITE};border:1px solid {BORDER};border-radius:10px;padding:12px 16px;">
+    <div class="tabla-scroll" style="background:{WHITE};border:1px solid {BORDER};
+                border-radius:10px;padding:12px 16px;">
       <table class="var-table">
         <thead><tr><th>Asset Category</th><th>Vol. histórico</th>
         {ths}<th>YTD</th></tr></thead>
