@@ -133,6 +133,9 @@ st.markdown(f"""
   html, body, .stApp {{
       font-family: {FONT_FAMILY} !important;
       background-color: {LIGHT_BG} !important;
+      /* El fondo del header usa 100vw, que incluye el ancho de la barra de
+         scroll: sin esto aparecería un scroll horizontal de unos píxeles. */
+      overflow-x: hidden;
   }}
 
   /* ── HERO ── */
@@ -224,6 +227,16 @@ st.markdown(f"""
       background: {WHITE}; border-radius: 10px; padding: 15px 18px;
       border: 1px solid {BORDER}; box-shadow: 0 1px 4px rgba(0,0,0,.02);
       height: 100%;
+  }}
+  /* El height:100% de la tarjeta no llega a resolverse por la cadena de
+     contenedores que Streamlit mete en medio, y las tarjetas de una misma
+     fila quedaban de alturas distintas según cuánto texto tuviera cada una.
+     Un min-height las nivela sin depender de esos contenedores internos.
+     (En celular se apilan, así que ahí no hace falta.) */
+  @media (min-width: 781px) {{
+      .kpi-card {{ min-height: 104px; }}
+      /* La cadena de descomposición es más compacta: solo etiqueta y valor. */
+      div.st-key-novus_cadena .kpi-card {{ min-height: 72px; }}
   }}
   .kpi-card.accent {{ border-left: 3px solid {GREEN}; }}
   .kpi-label {{
@@ -387,12 +400,40 @@ st.markdown(f"""
   }}
 
   /* ── HEADER SUPERIOR (marca · pestañas · sesión) ── */
+  /* El fondo oscuro se pinta con un pseudo-elemento de 100vw en vez de
+     estirar el container: los contenedores de Streamlit son flex items con
+     width:100% y volvían a encoger la barra, dejando una franja clara
+     sobre el borde derecho. Con 100vw el fondo siempre llega punta a punta. */
   div.st-key-novus_header {{
-      background: linear-gradient(135deg, {DARK_BG} 0%, #162416 100%);
-      margin: 0 calc(-1 * var(--novus-pad)) 1.1rem calc(-1 * var(--novus-pad));
-      padding: 14px var(--novus-pad) 0;
+      position: relative;
+      padding: 10px 0 0;
+      margin-bottom: 1.1rem;
+      align-items: stretch !important;
   }}
-  div.st-key-novus_header [data-testid="stHorizontalBlock"] {{ align-items: center; }}
+  div.st-key-novus_header::before {{
+      content: ""; position: absolute; top: 0; bottom: 0;
+      left: 50%; transform: translateX(-50%); width: 100vw;
+      background: linear-gradient(135deg, {DARK_BG} 0%, #162416 100%);
+      z-index: 0;
+  }}
+  div.st-key-novus_header > * {{ position: relative; z-index: 1; }}
+  /* La fila tiene que ocupar todo el ancho: si se encoge al contenido, las
+     3 columnas quedan corridas y las pestañas no caen en el centro real. */
+  div.st-key-novus_header [data-testid="stHorizontalBlock"] {{
+      width: 100% !important; align-items: stretch;
+  }}
+  /* Las tres zonas a la misma altura: las columnas de Streamlit colapsan
+     cuando el contenido es texto corto y quedaban desalineadas por píxeles. */
+  div.st-key-novus_header [data-testid="stColumn"] {{
+      display: flex; align-items: center; min-height: 56px;
+  }}
+  div.st-key-novus_header [data-testid="stColumn"] > [data-testid="stVerticalBlock"] {{
+      width: 100%;
+      /* Es un flex en columna: esto centra el contenido verticalmente, que
+         es lo que faltaba para que marca, pestañas y sesión queden a la
+         misma altura en vez de cada una a la suya. */
+      justify-content: center;
+  }}
   .header-brand {{ font-size: .98rem; font-weight: 700; color: {WHITE}; white-space: nowrap; }}
   .header-brand span.sub {{ color: #9AADA9; font-weight: 300; }}
   .header-badge {{
@@ -415,8 +456,15 @@ st.markdown(f"""
   }}
 
   /* ── SELECTOR DE MÓDULO COMO PESTAÑAS, AL CENTRO DEL HEADER ── */
+  /* El bloque de Streamlit no estira a sus hijos, así que el radio medía
+     el ancho de las pestañas y el justify-content:center no tenía espacio
+     que repartir: las pestañas quedaban corridas a la izquierda. */
+  div.st-key-novus_topnav {{ align-items: stretch !important; }}
+  div.st-key-novus_topnav [data-testid="stElementContainer"],
+  div.st-key-novus_topnav div[data-testid="stRadio"] {{ width: 100% !important; }}
   div.st-key-novus_topnav div[data-testid="stRadio"] > label {{ display: none !important; }}
   div.st-key-novus_topnav div[role="radiogroup"] {{
+      width: 100% !important;
       gap: 4px !important; flex-wrap: nowrap !important; flex-direction: row !important;
       justify-content: center !important;
   }}
@@ -453,6 +501,31 @@ st.markdown(f"""
       color: {GREEN} !important; font-weight: 700 !important;
   }}
   div.st-key-novus_topnav div[role="radiogroup"] label > div:first-child {{ display: none !important; }}
+
+  /* ── MENÚ HAMBURGUESA (solo pantallas chicas) ──
+     Es un st.popover: el botón queda como la hamburguesa y el panel que
+     abre tiene el radio de módulos. En desktop está escondido. */
+  div.st-key-novus_hamburguesa {{ display: none; }}
+  div.st-key-novus_hamburguesa button {{
+      background: rgba(255,255,255,.06) !important;
+      color: {WHITE} !important;
+      border: 1px solid rgba(93,187,99,.45) !important;
+      border-radius: 8px !important;
+      font-size: .85rem !important; font-weight: 600 !important;
+      padding: 8px 14px !important; width: 100% !important;
+      justify-content: flex-start !important;
+  }}
+  div.st-key-novus_hamburguesa button p {{ color: {WHITE} !important; font-weight: 600 !important; }}
+  div.st-key-novus_hamburguesa button:hover {{
+      border-color: {GREEN} !important; background: rgba(93,187,99,.14) !important;
+  }}
+  /* El panel del popover: las opciones como lista vertical, no pills */
+  div[data-testid="stPopoverBody"] div[role="radiogroup"] {{
+      flex-direction: column !important; gap: 4px !important;
+  }}
+  div[data-testid="stPopoverBody"] div[role="radiogroup"] label {{
+      width: 100%; border-radius: 8px !important; padding: 9px 14px !important;
+  }}
 
   /* ── BOTONES DEL MODAL ──
      Ocupan todo el ancho de su columna: así quedan del mismo tamaño y
@@ -515,7 +588,7 @@ st.markdown(f"""
      conviven en una sola línea por debajo de ~1000px (el badge se montaba
      encima de las pestañas). */
   @media (max-width: 1000px) {{
-      div.st-key-novus_header {{ padding: 12px var(--novus-pad) 10px; }}
+      div.st-key-novus_header {{ padding: 12px 0 10px; }}
       div.st-key-novus_header [data-testid="stHorizontalBlock"] {{ flex-wrap: wrap; }}
       div.st-key-novus_header div[data-testid="stColumn"] {{
           min-width: 100% !important; flex: 1 1 100% !important;
@@ -525,19 +598,17 @@ st.markdown(f"""
       }}
       .header-brand {{ text-align: center; font-size: .92rem; }}
       .header-access {{ text-align: center; margin-bottom: 4px; }}
-      /* Las pestañas se scrollean en horizontal en vez de desbordar */
-      div.st-key-novus_topnav div[role="radiogroup"] {{
-          overflow-x: auto; justify-content: flex-start !important;
-          -webkit-overflow-scrolling: touch; padding-bottom: 2px;
+      div.st-key-novus_header [data-testid="stColumn"] {{
+          min-height: 0; justify-content: center;
       }}
+      /* Acá las pestañas en línea dejan lugar a la hamburguesa */
+      div.st-key-novus_topnav {{ display: none !important; }}
+      div.st-key-novus_hamburguesa {{ display: block; }}
   }}
 
   /* Celular */
   @media (max-width: 780px) {{
       :root {{ --novus-pad: 14px; }}
-      div.st-key-novus_topnav div[role="radiogroup"] label {{
-          padding: 11px 12px !important; font-size: .78rem !important;
-      }}
       .novus-hero {{ padding: 18px var(--novus-pad) 16px; }}
       .novus-hero h1 {{ font-size: 1.22rem; }}
       .novus-hero p {{ font-size: .78rem; }}
@@ -658,6 +729,31 @@ M_FCI  = "💰  Flujos & Fondos"
 # marca a la izquierda, pestañas al centro y sesión a la derecha. El
 # key="novus_header" del container es lo que el CSS usa para pintar la
 # barra full-bleed (ver "HEADER SUPERIOR" en el bloque de estilos).
+MODULOS = [M_FCI, M_DASH, M_CTAS]
+
+# Hay DOS navegadores para el mismo estado: las pestañas en línea (desktop)
+# y un menú hamburguesa (celular/tablet). El CSS muestra uno solo según el
+# ancho; los dos escriben en "modulo_actual", que es la única fuente de
+# verdad, y cada uno sincroniza al otro para que nunca queden desfasados.
+if "modulo_actual" not in st.session_state:
+    st.session_state["modulo_actual"] = M_FCI
+for _k in ("nav_pills", "nav_movil"):
+    if _k not in st.session_state:
+        st.session_state[_k] = st.session_state["modulo_actual"]
+
+
+def _nav_desde_pills():
+    v = st.session_state["nav_pills"]
+    st.session_state["modulo_actual"] = v
+    st.session_state["nav_movil"] = v
+
+
+def _nav_desde_movil():
+    v = st.session_state["nav_movil"]
+    st.session_state["modulo_actual"] = v
+    st.session_state["nav_pills"] = v
+
+
 with st.container(key="novus_header"):
     hc1, hc2, hc3 = st.columns([1.1, 2, 1.1], vertical_alignment="center")
     with hc1:
@@ -666,9 +762,17 @@ with st.container(key="novus_header"):
             '<span class="header-badge">middle office</span></div>',
             unsafe_allow_html=True)
     with hc2:
+        # Desktop: pestañas en línea.
         with st.container(key="novus_topnav"):
-            modulo = st.radio("Navegación", [M_FCI, M_DASH, M_CTAS],
-                              horizontal=True, label_visibility="collapsed", key="nav_modulo")
+            st.radio("Navegación", MODULOS, horizontal=True,
+                     label_visibility="collapsed", key="nav_pills",
+                     on_change=_nav_desde_pills)
+        # Celular/tablet: hamburguesa. El label muestra el módulo actual,
+        # así se sabe dónde se está parado con el menú cerrado.
+        with st.container(key="novus_hamburguesa"):
+            with st.popover(f"☰   {st.session_state['modulo_actual']}"):
+                st.radio("Ir a", MODULOS, label_visibility="collapsed",
+                         key="nav_movil", on_change=_nav_desde_movil)
     with hc3:
         st.markdown(
             '<div class="header-access">acceso · <span style="color:#5DBB63">protegido con '
@@ -682,6 +786,8 @@ with st.container(key="novus_header"):
                 for k in ("_auth_ok", "_intentos"):
                     st.session_state.pop(k, None)
                 st.rerun()
+
+modulo = st.session_state["modulo_actual"]
 
 # ═══════════════════════════════════════════════════════════════
 # Se resuelve el módulo 2 primero y se corta con st.stop(), así el
