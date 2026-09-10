@@ -137,6 +137,15 @@ st.markdown(f"""
          scroll: sin esto aparecería un scroll horizontal de unos píxeles. */
       overflow-x: hidden;
   }}
+  /* Excepción al font-family de arriba: los iconos de Streamlit son
+     ligaduras de la fuente Material Symbols. Si les imponemos Quicksand,
+     la ligadura no resuelve y se ve el nombre del icono como texto
+     ("logout" en vez del dibujito). */
+  span[data-testid="stIconMaterial"],
+  [class*="material-symbols"] {{
+      font-family: 'Material Symbols Rounded', 'Material Symbols Outlined',
+                   'Material Icons' !important;
+  }}
 
   /* ── HERO ── */
   .novus-hero {{
@@ -456,10 +465,12 @@ st.markdown(f"""
       width: auto !important;
   }}
   div.st-key-novus_header div[data-testid="stColumn"]:last-child .stButton {{ width: auto; }}
+  /* Botón de salir: cuadrado, solo icono, discreto. */
   div.st-key-novus_header div[data-testid="stColumn"]:last-child button {{
       background: transparent !important; color: #9AADA9 !important;
-      border: 1px solid rgba(255,255,255,.16) !important; padding: 4px 12px !important;
-      font-size: .72rem !important;
+      border: 1px solid rgba(255,255,255,.16) !important;
+      padding: 4px 8px !important; min-height: 32px !important;
+      font-size: .72rem !important; line-height: 1 !important;
   }}
   div.st-key-novus_header div[data-testid="stColumn"]:last-child button:hover {{
       color: {WHITE} !important; border-color: rgba(255,255,255,.35) !important; background: transparent !important;
@@ -737,9 +748,11 @@ if AUTH_ACTIVA and not login_gate():
 # ═══════════════════════════════════════════════════════════════
 # NAVEGACIÓN
 # ═══════════════════════════════════════════════════════════════
-M_DASH = "📊  Contrapartes"
-M_CTAS = "📋  Onboarding"
-M_FCI  = "💰  Flujos & Fondos"
+# Nombres sin emoji: en un dashboard financiero se leían informales y cada
+# navegador/resolución los dibuja de un tamaño distinto.
+M_DASH = "Contrapartes"
+M_CTAS = "Onboarding"
+M_FCI  = "Flujos & Fondos"
 
 # Sin sidebar: todo el header vive en una sola barra oscura arriba, con
 # marca a la izquierda, pestañas al centro y sesión a la derecha. El
@@ -751,10 +764,12 @@ MODULOS = [M_FCI, M_DASH, M_CTAS]
 # y un menú hamburguesa (celular/tablet). El CSS muestra uno solo según el
 # ancho; los dos escriben en "modulo_actual", que es la única fuente de
 # verdad, y cada uno sincroniza al otro para que nunca queden desfasados.
-if "modulo_actual" not in st.session_state:
+# El chequeo contra MODULOS evita que una sesión vieja (con los nombres
+# anteriores guardados) le pase al radio un valor que ya no existe.
+if st.session_state.get("modulo_actual") not in MODULOS:
     st.session_state["modulo_actual"] = M_FCI
 for _k in ("nav_pills", "nav_movil"):
-    if _k not in st.session_state:
+    if st.session_state.get(_k) not in MODULOS:
         st.session_state[_k] = st.session_state["modulo_actual"]
 
 
@@ -798,7 +813,11 @@ with st.container(key="novus_header"):
             '<div class="header-access"><span style="color:#E8A020">⚠ sin contraseña</span></div>',
             unsafe_allow_html=True)
         if AUTH_ACTIVA:
-            if st.button("Cerrar sesión", key="logout_header"):
+            # Compacto y discreto: se usa una vez por día y como botón con
+            # texto largo se comía el header. El icono va por el parámetro
+            # `icon` — puesto en la etiqueta, Streamlit lo imprime literal.
+            if st.button("Salir", icon=":material/logout:", key="logout_header",
+                         help="Cerrar sesión"):
                 for k in ("_auth_ok", "_intentos"):
                     st.session_state.pop(k, None)
                 st.rerun()
@@ -2263,14 +2282,17 @@ if modulo == M_FCI:
             mensual[col] = 0.0
     mensual["Neto"] = mensual["Suscripcion"] - mensual["Rescate"]
 
-    peor_mes_txt = "n/d"
+    # Monto y detalle separados: en una sola línea la tarjeta ocupaba tres
+    # renglones y desalineaba la fila contra las otras tres.
+    peor_monto_txt, peor_detalle_txt = "n/d", ""
     if len(mensual):
         peor_idx = mensual["Neto"].idxmin()
         peor_neto = mensual.loc[peor_idx, "Neto"]
         pat_inicio_peor = _patrimonio_inicio_mes(peor_idx)
         pct_peor = (peor_neto / pat_inicio_peor * 100) if pat_inicio_peor else np.nan
-        pct_txt = f"{pct_peor:,.1f}%" if pd.notna(pct_peor) else "n/d"
-        peor_mes_txt = f"{MESES_ABR[peor_idx.month]}-{peor_idx.year}, {fmt_usd(peor_neto)} ({pct_txt} del patrimonio)"
+        pct_txt = f"{pct_peor:,.1f}% del patrimonio" if pd.notna(pct_peor) else "% n/d"
+        peor_monto_txt = fmt_usd(peor_neto)
+        peor_detalle_txt = f"{MESES_ABR[peor_idx.month]}-{peor_idx.year} · {pct_txt}"
 
     st1, st2, st3, st4 = st.columns(4)
     with st1:
@@ -2290,7 +2312,8 @@ if modulo == M_FCI:
                     unsafe_allow_html=True)
     with st4:
         st.markdown(f'<div class="kpi-card accent"><div class="kpi-label">Peor mes (stress test)</div>'
-                    f'<div class="kpi-value sm" style="color:{RED}">{peor_mes_txt}</div></div>',
+                    f'<div class="kpi-value sm" style="color:{RED}">{peor_monto_txt}</div>'
+                    f'<div class="kpi-sub">{peor_detalle_txt}</div></div>',
                     unsafe_allow_html=True)
 
     if pd.notna(ratio_rr) and ratio_rr > 1:
