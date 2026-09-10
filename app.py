@@ -441,10 +441,20 @@ st.markdown(f"""
       border-radius: 20px; padding: 2px 10px; font-size: .62rem; font-weight: 600;
       letter-spacing: 1px; text-transform: uppercase; color: {GREEN}; vertical-align: middle;
   }}
-  .header-access {{
-      text-align: right; font-size: .68rem; color: #7A857D; margin-bottom: 6px;
+  .header-access {{ font-size: .68rem; color: #7A857D; white-space: nowrap; }}
+  /* Estado de sesión y botón de salir en UNA línea, pegados a la derecha y
+     centrados con la marca: apilados quedaban el texto arriba del todo y el
+     botón flotando al medio, con los bordes derechos desparejos. */
+  div.st-key-novus_header [data-testid="stColumn"]:last-child > [data-testid="stVerticalBlock"] {{
+      flex-direction: row !important;
+      align-items: center !important;
+      justify-content: flex-end !important;
+      flex-wrap: wrap;
+      gap: 10px;
   }}
-  div.st-key-novus_header div[data-testid="stColumn"]:last-child {{ display: flex; flex-direction: column; align-items: flex-end; }}
+  div.st-key-novus_header [data-testid="stColumn"]:last-child [data-testid="stElementContainer"] {{
+      width: auto !important;
+  }}
   div.st-key-novus_header div[data-testid="stColumn"]:last-child .stButton {{ width: auto; }}
   div.st-key-novus_header div[data-testid="stColumn"]:last-child button {{
       background: transparent !important; color: #9AADA9 !important;
@@ -500,7 +510,13 @@ st.markdown(f"""
   div.st-key-novus_topnav div[role="radiogroup"] label:has(input:checked) p {{
       color: {GREEN} !important; font-weight: 700 !important;
   }}
-  div.st-key-novus_topnav div[role="radiogroup"] label > div:first-child {{ display: none !important; }}
+  /* Fuera el circulito del radio: son pestañas, no una lista de opciones.
+     El primer hijo del label es un <span> con el input escondido, así que
+     un "label > div:first-child" no lo agarraba nunca — el círculo es el
+     primer div de la fila interna. */
+  div.st-key-novus_topnav label[data-testid="stRadioOption"] > div > div > div:first-child {{
+      display: none !important;
+  }}
 
   /* ── MENÚ HAMBURGUESA (solo pantallas chicas) ──
      Es un st.popover: el botón queda como la hamburguesa y el panel que
@@ -774,12 +790,12 @@ with st.container(key="novus_header"):
                 st.radio("Ir a", MODULOS, label_visibility="collapsed",
                          key="nav_movil", on_change=_nav_desde_movil)
     with hc3:
+        # Texto corto: en el header conviven con el botón de salir, y
+        # "acceso · protegido con contraseña" apretaba todo contra el borde.
         st.markdown(
-            '<div class="header-access">acceso · <span style="color:#5DBB63">protegido con '
-            'contraseña</span></div>'
+            '<div class="header-access"><span style="color:#5DBB63">🔒 sesión protegida</span></div>'
             if AUTH_ACTIVA else
-            '<div class="header-access">acceso · <span style="color:#E8A020">sin contraseña'
-            '</span></div>',
+            '<div class="header-access"><span style="color:#E8A020">⚠ sin contraseña</span></div>',
             unsafe_allow_html=True)
         if AUTH_ACTIVA:
             if st.button("Cerrar sesión", key="logout_header"):
