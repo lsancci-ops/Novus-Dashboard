@@ -359,13 +359,23 @@ st.markdown(f"""
   /* ── STEPPER DE ETAPA (onboarding) ── */
   /* El color de cada nodo/línea se pisa inline por paso (ver _stepper_html);
      estas reglas son solo el look base para los pasos todavía no alcanzados. */
-  .novus-stepper {{ display: flex; align-items: center; gap: 0; margin-bottom: 4px; }}
-  .novus-stepper .nodo {{
-      width: 9px; height: 9px; border-radius: 50%; background: #e5e7eb; flex: none;
+  /* El stepper y el nombre de la etapa van uno al lado del otro. Apilados,
+     la celda crecía a dos renglones y la fila quedaba alta y vacía. */
+  .etapa-wrap {{ display: flex; align-items: center; gap: 10px; min-width: 0; }}
+  .novus-stepper {{
+      display: flex; align-items: center; gap: 0; flex: none; width: 104px;
   }}
-  .novus-stepper .linea {{ flex: 1 1 16px; height: 2px; background: #e5e7eb; min-width: 10px; }}
-  .stepper-caption {{ font-size: .7rem; color: {GRAY_TEXT}; }}
-  .stepper-caption b {{ font-weight: 600; }}
+  .novus-stepper .nodo {{
+      width: 7px; height: 7px; border-radius: 50%; background: #e5e7eb; flex: none;
+  }}
+  .novus-stepper .linea {{ flex: 1 1 auto; height: 2px; background: #e5e7eb; min-width: 6px; }}
+  /* El nombre de la etapa como pastilla tenue del color del paso: se lee de
+     un vistazo sin que el color grite. */
+  .etapa-tag {{
+      font-size: .72rem; font-weight: 600; padding: 2px 9px; border-radius: 20px;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0;
+  }}
+  .etapa-paso {{ font-size: .68rem; color: {GRAY_TEXT}; flex: none; }}
 
   /* ── TABS ── */
   .stTabs [data-baseweb="tab-list"] {{ gap: 4px; background: transparent; border-bottom: 1px solid {BORDER}; }}
@@ -403,6 +413,30 @@ st.markdown(f"""
   button[data-testid="stBaseButton-primaryFormSubmit"]:hover,
   .stDownloadButton button:hover, .stButton button:hover {{
       background: {GREEN_DIM} !important; color: {WHITE} !important; border-color: {GREEN} !important;
+  }}
+
+  /* Los dos botones de cada fila de onboarding eran dos cuadrados negros
+     idénticos: pesaban más que el dato y no distinguían editar de borrar.
+     Van en versión fantasma, y el color aparece recién al pasar el mouse
+     (verde para editar, rojo para eliminar). */
+  div[class*="st-key-"][class*="_edit_"] button,
+  div[class*="st-key-"][class*="_del_"] button {{
+      background: transparent !important; border: 1px solid transparent !important;
+      color: {GRAY_TEXT} !important; padding: 4px 8px !important;
+      min-height: 0 !important; opacity: .55; transition: all .12s;
+  }}
+  div[data-testid="stHorizontalBlock"]:has(.fila-onb):hover
+      div[class*="st-key-"][class*="_edit_"] button,
+  div[data-testid="stHorizontalBlock"]:has(.fila-onb):hover
+      div[class*="st-key-"][class*="_del_"] button {{ opacity: 1; }}
+  div[class*="st-key-"][class*="_edit_"] button:hover {{
+      background: rgba(93,187,99,.12) !important;
+      border-color: rgba(93,187,99,.45) !important; opacity: 1;
+  }}
+  div[class*="st-key-"][class*="_del_"] button {{ font-size: .95rem !important; }}
+  div[class*="st-key-"][class*="_del_"] button:hover {{
+      background: rgba(224,85,85,.12) !important; color: {RED} !important;
+      border-color: rgba(224,85,85,.45) !important; opacity: 1;
   }}
 
   div[data-testid="stDataFrame"] {{
@@ -641,18 +675,33 @@ st.markdown(f"""
      campo (data-label) que en desktop la da el encabezado. */
   .fila-onb {{
       display: grid;
-      grid-template-columns: 2.2fr 1.6fr 1.6fr 2.8fr;
-      gap: 12px; align-items: center; min-height: 40px;
-      font-size: .84rem; color: {DARK_TEXT};
+      grid-template-columns: 2.8fr 2.4fr 2fr;
+      gap: 16px; align-items: center; min-height: 34px;
+      font-size: .82rem; color: {DARK_TEXT};
       border-bottom: 1px solid #F0F2F0;
   }}
   .fila-onb .celda {{ min-width: 0; overflow-wrap: anywhere; }}
+  /* Marca de excepción al lado de la contraparte: una cuenta cuyo tipo no es
+     el de la pestaña ("Exterior" entre remuneradas) o que no lo tiene cargado. */
+  .tag-excep {{
+      display: inline-block; margin-left: 7px; padding: 1px 7px; border-radius: 20px;
+      font-size: .64rem; font-weight: 700; text-transform: uppercase;
+      letter-spacing: .4px; color: {AMBER}; background: rgba(232,160,32,.14);
+      vertical-align: middle;
+  }}
   .fila-onb .celda::before {{ content: attr(data-label); display: none; }}
   .fila-onb-encab {{
-      border-bottom: 1px solid {BORDER}; min-height: 0; padding-bottom: 4px;
+      border-bottom: 1px solid {BORDER}; min-height: 0; padding-bottom: 5px;
       font-size: .63rem; font-weight: 700; letter-spacing: 1px;
       text-transform: uppercase; color: {GRAY_TEXT};
   }}
+  /* Resaltado de fila completa. Tiene que ir sobre el bloque horizontal —no
+     sobre .fila-onb— porque los botones viven en columnas aparte y si no el
+     resaltado se cortaría justo antes de ellos. */
+  div[data-testid="stHorizontalBlock"]:has(.fila-onb) {{
+      border-radius: 6px; transition: background .12s;
+  }}
+  div[data-testid="stHorizontalBlock"]:has(.fila-onb):hover {{ background: #F7F9F7; }}
 
   /* ═══════════════ RESPONSIVE ═══════════════ */
   /* Notebook / tablet horizontal */
@@ -729,7 +778,19 @@ st.markdown(f"""
           display: inline-block; min-width: 78px; font-size: .58rem; font-weight: 700;
           letter-spacing: .8px; text-transform: uppercase; color: {GRAY_TEXT};
       }}
-      .fila-onb-encab {{ display: none !important; }}
+      /* Esconder solo el .fila-onb-encab dejaba su contenedor de columnas
+         vacío pero ocupando lugar: una caja gris arriba de la primera fila.
+         Se esconde el bloque entero. */
+      div[class*="st-key-"][class*="_encab"] {{ display: none !important; }}
+      /* Editar y eliminar, uno al lado del otro. Streamlit apila TODAS las
+         columnas a ancho completo en celular y cada botón se comía un
+         renglón propio. */
+      div[data-testid="stHorizontalBlock"]:has(.fila-onb)
+          > div[data-testid="stColumn"]:not(:first-child) {{
+          flex: 0 0 auto !important; width: auto !important; min-width: 0 !important;
+      }}
+      div[class*="st-key-"][class*="_edit_"] button,
+      div[class*="st-key-"][class*="_del_"] button {{ opacity: 1; }}
   }}
 
   #MainMenu, footer, header {{ visibility: hidden; height: 0; }}
@@ -1785,12 +1846,19 @@ if modulo == M_CTAS:
             if i < total - 1:
                 color_linea = _color_paso(i, total) if i < idx else PENDIENTE_GRIS
                 nodos.append(f'<span class="linea" style="background:{color_linea}"></span>')
-        color_caption = _color_paso(idx, total)
-        return (f'<div class="novus-stepper">{"".join(nodos)}</div>'
-                f'<div class="stepper-caption"><b style="color:{color_caption}">{etapa_actual}</b> '
-                f'· Paso {idx + 1}/{total}</div>')
+        c = _color_paso(idx, total)
+        return (f'<div class="etapa-wrap">'
+                f'<div class="novus-stepper">{"".join(nodos)}</div>'
+                f'<div class="etapa-tag" style="color:{c};background:{c}1F" '
+                f'title="{etapa_actual}">{etapa_actual}</div>'
+                f'<div class="etapa-paso">{idx + 1}/{total}</div>'
+                f'</div>')
 
     FILAS_POR_PAGINA = 25
+    # Reparto de la fila: datos / editar / eliminar. Lo usan la fila y el
+    # encabezado, que tienen que medir exactamente lo mismo para que los
+    # títulos caigan sobre su columna.
+    ANCHOS_FILA = [17, 1, 1]
 
     def _css_conteo_chips(clave, conteos):
         """Pinta el contador de cada chip. Va como regla :nth-child porque el
@@ -1807,7 +1875,7 @@ if modulo == M_CTAS:
                 reglas.append(f'{sel}{{opacity:.45}}')
         st.markdown("<style>" + "".join(reglas) + "</style>", unsafe_allow_html=True)
 
-    def _tabla_onboarding(vis, etapas, clave, etiqueta):
+    def _tabla_onboarding(vis, etapas, clave, etiqueta, tipo_esperado):
         """Chips de etapa + tabla paginada con stepper por fila. Clic en una
         fila abre el modal de edición (st.dialog)."""
         # La columna de fondo no se llama igual en las dos hojas (Comitentes
@@ -1864,10 +1932,15 @@ if modulo == M_CTAS:
         # apilarse en celular sus contenedores internos colapsaban a ~5px y
         # el texto se montaba sobre la fila siguiente. Con un grid propio el
         # reflow a una columna lo maneja el CSS y no depende de Streamlit.
-        st.markdown(
+        # El encabezado va dentro del MISMO reparto de columnas que las filas.
+        # Suelto a ancho completo, su grilla medía ~200px más que la de los
+        # datos y los títulos caían corridos respecto de la columna que nombran.
+        with st.container(key=f"{clave}_encab"):
+            h_info, _, _ = st.columns(ANCHOS_FILA, vertical_alignment="center")
+        h_info.markdown(
             f'<div class="fila-onb fila-onb-encab">'
             f'<div class="celda">Contraparte</div><div class="celda">{etiq_fondo_col}</div>'
-            f'<div class="celda">Tipo</div><div class="celda">Etapa</div></div>',
+            f'<div class="celda">Etapa</div></div>',
             unsafe_allow_html=True)
 
         for idx, row in pagina.iterrows():
@@ -1877,15 +1950,21 @@ if modulo == M_CTAS:
                 estado_val = str(row.get("Estado", "")).strip()
                 stepper = f'{EST_ICONO.get(estado_val, "⚫")} {estado_val or "—"}'
 
-            c_info, c_edit, c_del = st.columns([12, 1, 1], vertical_alignment="center")
+            # "Tipo" decía lo mismo en toda la pestaña (Remunerada / Comitente)
+            # y se comía una columna entera. Ahora solo se marca la excepción
+            # —la única cuenta "Exterior", o una fila sin tipo cargado—, que
+            # antes pasaba desapercibida entre 157 filas idénticas.
+            tipo_val = str(row.get(COL_TIPO, "") or "").strip() if COL_TIPO else ""
+            excep = ("" if tipo_val == tipo_esperado else
+                     f'<span class="tag-excep">{tipo_val or "sin tipo"}</span>')
+
+            c_info, c_edit, c_del = st.columns(ANCHOS_FILA, vertical_alignment="center")
             c_info.markdown(
                 f'<div class="fila-onb">'
                 f'<div class="celda" data-label="Contraparte">'
-                f'<b>{row.get("Contraparte", "—") or "—"}</b></div>'
+                f'<b>{row.get("Contraparte", "—") or "—"}</b>{excep}</div>'
                 f'<div class="celda" data-label="{etiq_fondo_col}">'
                 f'{(row.get(col_fondo_local, "—") if col_fondo_local else "—") or "—"}</div>'
-                f'<div class="celda" data-label="Tipo">'
-                f'{(row.get(COL_TIPO, "—") if COL_TIPO else "—") or "—"}</div>'
                 f'<div class="celda" data-label="Etapa">{stepper}</div>'
                 f'</div>', unsafe_allow_html=True)
             if c_edit.button("✏️", key=f"{clave}_edit_{idx}", help="Editar esta cuenta"):
@@ -2013,11 +2092,11 @@ if modulo == M_CTAS:
 
     if ver_com:
         with tabs[k]:
-            _tabla_onboarding(vis_com, ETAPAS_COM, "com", "cuentas comitentes")
+            _tabla_onboarding(vis_com, ETAPAS_COM, "com", "cuentas comitentes", TIPO_COM)
         k += 1
     if ver_rem:
         with tabs[k]:
-            _tabla_onboarding(vis_rem, ETAPAS_REM, "rem", "cuentas remuneradas")
+            _tabla_onboarding(vis_rem, ETAPAS_REM, "rem", "cuentas remuneradas", TIPO_REM)
         k += 1
 
     # ── VISTA CONSOLIDADA (solo lectura, con fondo de color por estado) ──
