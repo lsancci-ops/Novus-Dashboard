@@ -229,7 +229,13 @@ st.markdown(f"""
   }}
   div[role="radiogroup"] label:has(input:checked) div,
   div[role="radiogroup"] label:has(input:checked) p {{ color: {GREEN} !important; }}
-  div[role="radiogroup"] label > div:first-child {{ display: none !important; }}
+  /* Fuera el circulito del radio. OJO con el selector: el primer hijo del
+     label es un <span> oculto, no el círculo, así que `label > div:first-child`
+     no pega nunca. El círculo cuelga dos niveles más abajo. */
+  div[role="radiogroup"] label > div:first-child,
+  div[role="radiogroup"] label[data-testid="stRadioOption"] > div > div > div:first-child {{
+      display: none !important;
+  }}
 
   /* ── KPI CARDS ── */
   .kpi-card {{
@@ -268,6 +274,68 @@ st.markdown(f"""
   .chart-label {{
       font-size: .63rem; font-weight: 700; text-transform: uppercase;
       letter-spacing: 1px; color: {GRAY_TEXT}; margin-bottom: 8px;
+  }}
+
+  /* ── BARRA DE FILTRO DE ETAPA (chips) ── */
+  /* Encabezado de la tabla: el total a la izquierda y, a la derecha, en qué
+     etapa se está parado. Reemplaza la etiqueta suelta "N cuentas ...". */
+  .onb-bar {{
+      display: flex; align-items: baseline; justify-content: space-between;
+      gap: 12px; flex-wrap: wrap; margin: 2px 0 10px;
+      padding-bottom: 9px; border-bottom: 1px solid {BORDER};
+  }}
+  .onb-bar .tot {{ font-size: .95rem; font-weight: 700; color: {DARK_TEXT}; }}
+  .onb-bar .tot span {{
+      font-size: .63rem; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 1px; color: {GRAY_TEXT}; margin-left: 6px;
+  }}
+  .onb-bar .ctx {{ font-size: .74rem; color: {GRAY_TEXT}; }}
+  .onb-bar .ctx b {{ color: {GREEN_DIM}; font-weight: 600; }}
+
+  /* Los chips son un radio de Streamlit: se estilan por el contenedor con
+     key, así no se pisa el resto de los radios de la app. */
+  div[class*="st-key-"][class*="_chip"] div[role="radiogroup"] {{
+      gap: 7px !important; margin-bottom: 2px;
+  }}
+  /* Streamlit deja el label en display:block, así que el badge del ::after
+     caía a un renglón propio y el chip medía 57px de alto. En flex, texto y
+     contador quedan en la misma línea. */
+  div[class*="st-key-"][class*="_chip"] div[role="radiogroup"] label {{
+      background: {WHITE}; border: 1px solid {BORDER}; border-radius: 8px;
+      padding: 6px 13px !important; font-size: .76rem !important;
+      box-shadow: 0 1px 2px rgba(0,0,0,.03);
+      display: flex !important; align-items: center !important;
+  }}
+  div[class*="st-key-"][class*="_chip"] div[role="radiogroup"] label:hover {{
+      border-color: {GREEN}; background: #F6FBF6;
+  }}
+  div[class*="st-key-"][class*="_chip"] div[role="radiogroup"] label:has(input:checked) {{
+      background: {DARK_BG} !important; border-color: {DARK_BG} !important;
+      box-shadow: 0 2px 6px rgba(26,28,26,.18);
+  }}
+  /* El contador de cada chip va por ::after. El número NO puede ir en el
+     texto de la opción: cambia con cada alta o baja y el valor guardado en
+     session_state dejaría de existir entre los options, que es justo lo que
+     hace explotar a st.radio. Así que el estilo del badge vive acá y el
+     número lo inyecta _css_conteo_chips() como reglas :nth-child. */
+  div[class*="st-key-"][class*="_chip"] div[role="radiogroup"] label::after {{
+      display: none; margin-left: 8px; padding: 1px 6px;
+      border-radius: 5px; background: {LIGHT_BG}; color: {GRAY_TEXT};
+      font-size: .68rem; font-weight: 700; font-variant-numeric: tabular-nums;
+  }}
+  div[class*="st-key-"][class*="_chip"] div[role="radiogroup"]
+      label:has(input:checked)::after {{
+      background: rgba(93,187,99,.18); color: {GREEN};
+  }}
+
+  /* El selector de página ocupaba una fila entera para un número de dos
+     dígitos: se acota el ancho y se achica la etiqueta. */
+  div[class*="st-key-"][class*="_pag_box"] {{ margin: -2px 0 6px; }}
+  div[class*="st-key-"][class*="_pag_box"] div[data-testid="stNumberInput"] {{
+      max-width: 168px;
+  }}
+  div[class*="st-key-"][class*="_pag_box"] label p {{
+      font-size: .68rem !important; color: {GRAY_TEXT} !important;
   }}
 
   /* ── TABLA VAR% ── */
@@ -1499,34 +1567,10 @@ if modulo == M_CTAS:
                     f'<div class="kpi-sub">contrapartes · {ETIQ_FONDO.lower()}</div></div>',
                     unsafe_allow_html=True)
 
-    # ── AVANCE POR ESTADO ───────────────────────────────────────────
-    if total:
-        est_tot = {e: _cuenta(vis_com, e) + _cuenta(vis_rem, e) for e in ESTADOS}
-        colores_est = {"Abierta": GREEN_DIM, "En proceso": AMBER,
-                       "Rechazada": RED, "De baja": "#9AA5A0"}
-        fig_est = go.Figure()
-        for e in ESTADOS:
-            v = est_tot.get(e, 0)
-            if not v:
-                continue
-            fig_est.add_trace(go.Bar(
-                x=[v / total * 100], y=["e"], orientation="h",
-                name=f"{EST_ICONO[e]} {e} ({v})", marker_color=colores_est.get(e, GREEN),
-                text=[f"{v}"] if v / total * 100 >= 6 else [""],
-                textposition="inside", insidetextanchor="middle",
-                textfont=dict(size=11, color="white", family=FONT_FAMILY),
-                hovertemplate=f"<b>{e}</b>: {v} de {total} (%{{x:.1f}}%)<extra></extra>",
-            ))
-        fig_est.update_layout(
-            **BASE_LAYOUT, barmode="stack", height=112, showlegend=True,
-            legend=dict(orientation="h", y=-0.5, x=0, traceorder="normal",
-                        font=dict(size=9.5, family=FONT_FAMILY)),
-            xaxis=dict(visible=False, range=[0, 100]), yaxis=dict(visible=False),
-            margin=dict(l=0, r=0, t=26, b=0),
-            title=dict(text="Distribución por estado", x=0, xanchor="left",
-                       font=dict(size=11.5, family=FONT_FAMILY, color=GRAY_TEXT)),
-        )
-        chart(fig_est, key="estados")
+    # NOTA: acá había una tira apilada "Distribución por estado". Se quitó a
+    # pedido: los KPI de arriba ya dan abiertas y pendientes, y el reparto
+    # fino ahora se lee en los chips de etapa de cada tabla, que muestran
+    # cuántas cuentas hay en cada paso.
 
     # NOTA: acá había un gráfico de barras "Cuentas por FCI". Se quitó a
     # pedido: con 93 fondos eran 93 barras y no se leía nada. Si alguna vez
@@ -1748,7 +1792,22 @@ if modulo == M_CTAS:
 
     FILAS_POR_PAGINA = 25
 
-    def _tabla_onboarding(vis, etapas, clave):
+    def _css_conteo_chips(clave, conteos):
+        """Pinta el contador de cada chip. Va como regla :nth-child porque el
+        número no puede formar parte del texto de la opción (ver el CSS del
+        badge). El orden de `conteos` es el mismo que el de los options."""
+        reglas = []
+        for i, n in enumerate(conteos, start=1):
+            sel = (f'div.st-key-{clave}_chip div[role="radiogroup"] '
+                   f'label:nth-child({i})')
+            reglas.append(f'{sel}::after{{content:"{n}";display:inline-block}}')
+            if n == 0:
+                # La etapa existe pero está vacía: se muestra apagada en vez
+                # de esconderla, así se ve que el paso está previsto.
+                reglas.append(f'{sel}{{opacity:.45}}')
+        st.markdown("<style>" + "".join(reglas) + "</style>", unsafe_allow_html=True)
+
+    def _tabla_onboarding(vis, etapas, clave, etiqueta):
         """Chips de etapa + tabla paginada con stepper por fila. Clic en una
         fila abre el modal de edición (st.dialog)."""
         # La columna de fondo no se llama igual en las dos hojas (Comitentes
@@ -1756,22 +1815,43 @@ if modulo == M_CTAS:
         # puntual, no con el COL_FONDO global (que solo pega con Comitentes).
         col_fondo_local = _primera_col(CAND_FONDO, vis)
 
+        col_etapa = vis["Etapa"].astype(str).str.strip() if "Etapa" in vis.columns else None
+        conteos = [len(vis)] + [int((col_etapa == e).sum()) if col_etapa is not None else 0
+                                for e in etapas]
+
+        # El propio key del widget deja la clase st-key-<clave>_chip en su
+        # contenedor, que es a lo que apuntan el CSS y los contadores.
         chip = st.radio("Etapa", ["Todos"] + etapas, horizontal=True,
                         label_visibility="collapsed", key=f"{clave}_chip")
+        _css_conteo_chips(clave, conteos)
         d = vis if chip == "Todos" else vis[vis["Etapa"] == chip]
 
+        # Encabezado: el total a la izquierda y, solo si hay un chip activo,
+        # de qué etapa se trata. Sin filtro, "158 de 158" no dice nada.
+        if chip == "Todos":
+            izq, der = f'{len(d)}<span>{etiqueta}</span>', ""
+        else:
+            izq = f'{len(d)}<span>de {len(vis)} {etiqueta}</span>'
+            der = f'<div class="ctx">etapa <b>{chip}</b></div>'
+        st.markdown(f'<div class="onb-bar"><div class="tot">{izq}</div>{der}</div>',
+                    unsafe_allow_html=True)
+
         if d.empty:
-            st.info("Ninguna cuenta coincide con este filtro.")
+            st.info("Ninguna cuenta en esta etapa.")
             return
 
         n_paginas = max(1, -(-len(d) // FILAS_POR_PAGINA))
         pag_key = f"{clave}_pagina"
         pag_actual = min(st.session_state.get(pag_key, 1), n_paginas)
-        pc1, pc2 = st.columns([1, 4])
-        with pc1:
-            pag_actual = st.number_input(f"Página (de {n_paginas})", min_value=1,
-                                         max_value=n_paginas, value=pag_actual, step=1,
-                                         key=f"{clave}_pag_input")
+        # Con una sola página el control no aporta nada y ocupa una fila
+        # entera; se muestra solo cuando hay algo que paginar.
+        if n_paginas > 1:
+            with st.container(key=f"{clave}_pag_box"):
+                pc1, _ = st.columns([1, 4])
+                with pc1:
+                    pag_actual = st.number_input(
+                        f"Página (de {n_paginas})", min_value=1, max_value=n_paginas,
+                        value=pag_actual, step=1, key=f"{clave}_pag_input")
         st.session_state[pag_key] = pag_actual
 
         ini = (pag_actual - 1) * FILAS_POR_PAGINA
@@ -1933,15 +2013,11 @@ if modulo == M_CTAS:
 
     if ver_com:
         with tabs[k]:
-            st.markdown(f'<div class="chart-label">{n_com} cuentas comitentes</div>',
-                       unsafe_allow_html=True)
-            _tabla_onboarding(vis_com, ETAPAS_COM, "com")
+            _tabla_onboarding(vis_com, ETAPAS_COM, "com", "cuentas comitentes")
         k += 1
     if ver_rem:
         with tabs[k]:
-            st.markdown(f'<div class="chart-label">{n_rem} cuentas remuneradas</div>',
-                       unsafe_allow_html=True)
-            _tabla_onboarding(vis_rem, ETAPAS_REM, "rem")
+            _tabla_onboarding(vis_rem, ETAPAS_REM, "rem", "cuentas remuneradas")
         k += 1
 
     # ── VISTA CONSOLIDADA (solo lectura, con fondo de color por estado) ──
