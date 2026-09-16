@@ -1161,6 +1161,13 @@ if modulo == M_CTAS:
     COL_TIPO  = _primera_col(CAND_TIPO, df_com, df_rem)
     ETIQ_FONDO = COL_FONDO or "Fondo"
 
+    def _col_fondo(df):
+        """Nombre de la columna de fondo EN ESA hoja: Comitentes la llama
+        "FCI" y Remuneradas "Fondo". Todo lo que recorra las dos hojas tiene
+        que resolverla por hoja; con un único nombre global, la mitad de las
+        operaciones (filtrar, unificar, contar) se salteaban Remuneradas."""
+        return _primera_col(CAND_FONDO, df)
+
     # ── ESTADOS CON COLOR ───────────────────────────────────────────
     # EST_ICONO se usa como badge de respaldo cuando una fila no tiene una
     # Etapa válida para el stepper (Rechazada/De baja). EST_FONDO/EST_TEXTO
@@ -1240,10 +1247,26 @@ if modulo == M_CTAS:
 
     def _aplicar_mapa(df):
         mapa = st.session_state.get("mapa_fci") or {}
-        if df is None or df.empty or not mapa or COL_FONDO not in (df.columns if df is not None else []):
+        col = _col_fondo(df)
+        if df is None or df.empty or not mapa or not col:
             return df
         d = df.copy()
-        d[COL_FONDO] = d[COL_FONDO].map(
+        d[col] = d[col].map(
+            lambda v: mapa.get(str(v).strip(), v) if pd.notna(v) else v)
+        return d
+
+    # ── UNIFICACIÓN DE CONTRAPARTES ──────────────────────────────────
+    # Mismo mecanismo que el de FCI: lo confirmado en esta sesión se guarda
+    # acá y se aplica antes de mostrar; recién queda firme al Guardar.
+    if "mapa_ctp" not in st.session_state:
+        st.session_state["mapa_ctp"] = {}
+
+    def _aplicar_mapa_ctp(df):
+        mapa = st.session_state.get("mapa_ctp") or {}
+        if df is None or df.empty or not mapa or "Contraparte" not in df.columns:
+            return df
+        d = df.copy()
+        d["Contraparte"] = d["Contraparte"].map(
             lambda v: mapa.get(str(v).strip(), v) if pd.notna(v) else v)
         return d
 
@@ -1321,12 +1344,33 @@ if modulo == M_CTAS:
         pend = st.session_state["nuevas_ctas"].get(clave) or []
         if df is None or not pend:
             return df
-        return pd.concat([df, pd.DataFrame(pend)], ignore_index=True, sort=False)
+        # Etiquetas nuevas que siguen a las existentes, en vez de
+        # ignore_index=True: ese renumeraba TODA la hoja y las ediciones y
+        # bajas pendientes (que se guardan por etiqueta de fila) pasaban a
+        # apuntar a la cuenta equivocada.
+        inicio = (int(df.index.max()) + 1) if len(df.index) else 0
+        nuevas = pd.DataFrame(pend, index=range(inicio, inicio + len(pend)))
+        return pd.concat([df, nuevas], sort=False)
 
-    df_com = _aplicar_mapa(_sumar_nuevas(df_com, "com"))
-    df_rem = _aplicar_mapa(_sumar_nuevas(df_rem, "rem"))
+    # ── CUENTAS ELIMINADAS PENDIENTES DE GUARDAR ────────────────────
+    # Mismo criterio que las altas y las ediciones: la baja se ve al toque
+    # en la tabla, pero recién se escribe en el Excel al Guardar.
+    if "bajas_ctas" not in st.session_state:
+        st.session_state["bajas_ctas"] = {"com": [], "rem": []}
+
+    def _aplicar_bajas(df, clave):
+        bajas = [i for i in (st.session_state["bajas_ctas"].get(clave) or [])
+                 if df is not None and i in df.index]
+        if df is None or not bajas:
+            return df
+        return df.drop(index=bajas)
+
+    df_com = _aplicar_bajas(_aplicar_mapa_ctp(_aplicar_mapa(_sumar_nuevas(df_com, "com"))), "com")
+    df_rem = _aplicar_bajas(_aplicar_mapa_ctp(_aplicar_mapa(_sumar_nuevas(df_rem, "rem"))), "rem")
     n_pendientes = (len(st.session_state["nuevas_ctas"]["com"]) +
                     len(st.session_state["nuevas_ctas"]["rem"]))
+    n_bajas = (len(st.session_state["bajas_ctas"]["com"]) +
+               len(st.session_state["bajas_ctas"]["rem"]))
 
     df_com, df_rem, df_fci = _enteros(df_com), _enteros(df_rem), _enteros(df_fci)
 
@@ -1343,7 +1387,20 @@ if modulo == M_CTAS:
         vals.discard("")
         return sorted(vals)
 
-    fondos_disp  = _valores(COL_FONDO, df_com, df_rem)
+    def _valores_fondo(*frames):
+        """La columna de fondo se llama distinto en cada hoja ("FCI" en
+        Comitentes, "Fondo" en Remuneradas): hay que resolverla por hoja.
+        Usando el nombre global se perdían los fondos que solo existen en
+        Remuneradas, que ni aparecían en el desplegable."""
+        vals = set()
+        for d in frames:
+            c = _primera_col(CAND_FONDO, d)
+            if d is not None and c:
+                vals |= set(d[c].dropna().astype(str).str.strip())
+        vals.discard("")
+        return sorted(vals)
+
+    fondos_disp  = _valores_fondo(df_com, df_rem)
     estados_disp = [e for e in ESTADOS if e in set(_valores("Estado", df_com, df_rem))]
     ctp_disp     = _valores("Contraparte", df_com, df_rem)
 
@@ -1372,7 +1429,13 @@ if modulo == M_CTAS:
         if df is None or df.empty:
             return df
         d = df
-        for col, sel in ((COL_FONDO, f_fondo), ("Estado", f_estado), ("Contraparte", f_ctp)):
+        # El nombre de la columna de fondo se resuelve para ESTA hoja. Con el
+        # nombre global ("FCI") el filtro no encontraba la columna en
+        # Remuneradas y esa hoja quedaba sin filtrar: el filtro parecía andar
+        # a veces sí y a veces no según la pestaña que estuvieras mirando.
+        col_fondo_hoja = _primera_col(CAND_FONDO, df)
+        for col, sel in ((col_fondo_hoja, f_fondo), ("Estado", f_estado),
+                         ("Contraparte", f_ctp)):
             if not sel or not col or col not in d.columns:
                 continue
             d = d[d[col].astype(str).str.strip().isin(sel)]
@@ -1399,7 +1462,7 @@ if modulo == M_CTAS:
     pct_ab   = (abiertas / total * 100) if total else 0.0
     total_sin_filtro = _filas(df_com) + _filas(df_rem)
     contrapartes = set(_valores("Contraparte", vis_com, vis_rem))
-    fondos_vis = set(_valores(COL_FONDO, vis_com, vis_rem))
+    fondos_vis = set(_valores_fondo(vis_com, vis_rem))
 
     titulo = "Estado del Onboarding"
     if filtro_activo:
@@ -1561,15 +1624,77 @@ if modulo == M_CTAS:
             f'<b>Guardar cambios</b> abajo para que queden en el repo.</div>',
             unsafe_allow_html=True)
 
+    if n_bajas:
+        bj1, bj2 = st.columns([3, 1], vertical_alignment="center")
+        with bj1:
+            st.markdown(
+                f'<div class="note warn"><b>{n_bajas} cuenta(s) eliminada(s), todavía sin '
+                f'guardar.</b> Desaparecieron de la tabla pero siguen en el Excel hasta que '
+                f'apretes <b>Guardar cambios</b>.</div>', unsafe_allow_html=True)
+        with bj2:
+            if st.button("↩  Deshacer bajas", key="btn_deshacer_bajas"):
+                st.session_state["bajas_ctas"] = {"com": [], "rem": []}
+                st.rerun()
+
     # El FCI pasa a desplegable SOLO cuando todos los valores ya están en el
     # catálogo. Si quedan variantes sueltas, un SelectboxColumn las tomaría
     # como inválidas y podría vaciarlas: se deja como texto hasta unificar.
     fci_sueltos = set()
-    if COL_FONDO and CATALOGO:
+    if CATALOGO:
         for d in (df_com, df_rem):
-            if d is not None and not d.empty and COL_FONDO in d.columns:
-                fci_sueltos |= {v for v in d[COL_FONDO].dropna().astype(str).str.strip()
+            col = _col_fondo(d)
+            if d is not None and not d.empty and col:
+                fci_sueltos |= {v for v in d[col].dropna().astype(str).str.strip()
                                 if v and v not in CATALOGO}
+
+    # ── GRUPOS DE CONTRAPARTES CON DISTINTA ESCRITURA ───────────────
+    # "Supervielle", "Banco Supervielle" y "Banco Supervielle S.A." son la
+    # misma contraparte escrita de tres formas. Se agrupan ignorando
+    # mayúsculas, acentos, puntuación y las palabras que no distinguen a
+    # una contraparte de otra (banco, valores, securities, S.A., etc.).
+    RUIDO_CTP = {"banco", "bank", "sa", "s", "a", "sau", "srl", "alyc", "cia",
+                 "y", "de", "valores", "securities", "sociedad", "bolsa",
+                 "capital", "capitales", "inversiones", "group", "grupo",
+                 "hnos", "financiera", "financial"}
+
+    def _sin_acentos(s):
+        s = unicodedata.normalize("NFKD", str(s).strip().lower())
+        return "".join(c for c in s if not unicodedata.combining(c))
+
+    def _clave_ctp(s):
+        s = re.sub(r"[^a-z0-9 ]", " ", _sin_acentos(s))
+        return " ".join(sorted(p for p in s.split() if p and p not in RUIDO_CTP))
+
+    # El riesgo real al preseleccionar no es "Supervielle" vs "Banco
+    # Supervielle" (son lo mismo), sino el banco y su ALyC, que en el mercado
+    # local comparten el nombre y son dos contrapartes distintas: "Banco
+    # Santander" / "Santander Valores", "Banco Macro" / "Macro Securities".
+    # Por eso el único caso que queda sin elegir es el grupo donde conviven
+    # una variante con "banco" y otra con "valores"/"securities".
+    PAL_BANCO = {"banco", "bank"}
+    PAL_ALYC = {"valores", "securities", "bursatil", "bolsa"}
+
+    def _palabras_ctp(s):
+        return set(re.sub(r"[^a-z0-9 ]", " ", _sin_acentos(s)).split())
+
+    def _conflicto_banco_alyc(variantes):
+        palabras = [_palabras_ctp(v) for v in variantes]
+        return (any(p & PAL_BANCO for p in palabras)
+                and any(p & PAL_ALYC for p in palabras))
+
+    ctp_conteo = {}
+    for d in (df_com, df_rem):
+        if d is not None and not d.empty and "Contraparte" in d.columns:
+            for v in d["Contraparte"].dropna().astype(str).str.strip():
+                if v:
+                    ctp_conteo[v] = ctp_conteo.get(v, 0) + 1
+
+    grupos_ctp = {}
+    for v in ctp_conteo:
+        grupos_ctp.setdefault(_clave_ctp(v), []).append(v)
+    # Solo interesan los grupos con más de una escritura.
+    grupos_ctp = {k: sorted(vs, key=lambda x: -ctp_conteo[x])
+                  for k, vs in grupos_ctp.items() if len(vs) > 1}
 
     # Se arranca con las hojas COMPLETAS: los cambios del modal ya están
     # aplicados sobre df_com/df_rem más arriba, así que alcanza con esto.
@@ -1581,10 +1706,12 @@ if modulo == M_CTAS:
     if ver_rem:
         nombres.append("  Remuneradas (bancos)  ")
     nombres += ["  Vista consolidada  ", "  FCI y matrículas  "]
-    # La pestaña de unificación aparece SOLO si hay algo que unificar, y se
-    # va sola cuando el catálogo queda limpio.
+    # Las pestañas de unificación aparecen SOLO si hay algo que unificar, y
+    # se van solas cuando queda limpio.
     if fci_sueltos:
         nombres.append(f"  ⚠ Unificar FCI ({len(fci_sueltos)})  ")
+    if grupos_ctp:
+        nombres.append(f"  ⚠ Unificar contrapartes ({len(grupos_ctp)})  ")
     tabs = list(st.tabs(nombres))
     k = 0
 
@@ -1670,7 +1797,7 @@ if modulo == M_CTAS:
                 estado_val = str(row.get("Estado", "")).strip()
                 stepper = f'{EST_ICONO.get(estado_val, "⚫")} {estado_val or "—"}'
 
-            c_info, c_btn = st.columns([12, 1], vertical_alignment="center")
+            c_info, c_edit, c_del = st.columns([12, 1, 1], vertical_alignment="center")
             c_info.markdown(
                 f'<div class="fila-onb">'
                 f'<div class="celda" data-label="Contraparte">'
@@ -1681,8 +1808,13 @@ if modulo == M_CTAS:
                 f'{(row.get(COL_TIPO, "—") if COL_TIPO else "—") or "—"}</div>'
                 f'<div class="celda" data-label="Etapa">{stepper}</div>'
                 f'</div>', unsafe_allow_html=True)
-            if c_btn.button("✏️", key=f"{clave}_edit_{idx}", help="Editar esta cuenta"):
+            if c_edit.button("✏️", key=f"{clave}_edit_{idx}", help="Editar esta cuenta"):
                 st.session_state["_abrir_modal"] = (clave, idx)
+                st.rerun()
+            # Borrar pide confirmación: son 600+ filas de datos reales y un
+            # clic al lado del lápiz no puede borrar una cuenta sin más.
+            if c_del.button("✕", key=f"{clave}_del_{idx}", help="Eliminar esta cuenta"):
+                st.session_state["_confirmar_baja"] = (clave, idx)
                 st.rerun()
 
     # ── MODAL DE EDICIÓN (sin drawer nativo en Streamlit: st.dialog es la
@@ -1759,8 +1891,45 @@ if modulo == M_CTAS:
             del st.session_state["_abrir_modal"]
             st.rerun()
 
+    @st.dialog("Eliminar cuenta")
+    def _modal_eliminar_cuenta():
+        clave, idx = st.session_state["_confirmar_baja"]
+        df_ref = df_com if clave == "com" else df_rem
+        if idx not in df_ref.index:
+            st.warning("Esta cuenta ya no está disponible.")
+            if st.button("Cerrar", key="baja_cerrar"):
+                del st.session_state["_confirmar_baja"]
+                st.rerun()
+            return
+        row = df_ref.loc[idx]
+        col_f = _col_fondo(df_ref)
+        st.markdown("¿Eliminar esta cuenta de la hoja?")
+        st.markdown(f"**Contraparte:** {row.get('Contraparte', '—') or '—'}")
+        st.markdown(f"**{col_f or 'Fondo'}:** {(row.get(col_f, '—') if col_f else '—') or '—'}")
+        st.markdown(f"**Estado:** {row.get('Estado', '—') or '—'}")
+        st.markdown('<div class="note warn">Se saca de la tabla ahora, pero el Excel recién '
+                    'cambia cuando apretás <b>Guardar cambios</b>. Hasta entonces podés '
+                    'deshacerlo.</div>', unsafe_allow_html=True)
+
+        bc1, bc2 = st.columns(2)
+        with bc1:
+            confirmar = st.button("Eliminar", key="baja_confirmar", type="primary")
+        with bc2:
+            cancelar = st.button("Cancelar", key="baja_cancelar")
+        if confirmar:
+            st.session_state["bajas_ctas"][clave].append(idx)
+            # Si tenía ediciones pendientes, ya no aplican.
+            st.session_state["ediciones_ctas"][clave].pop(idx, None)
+            del st.session_state["_confirmar_baja"]
+            st.rerun()
+        if cancelar:
+            del st.session_state["_confirmar_baja"]
+            st.rerun()
+
     if "_abrir_modal" in st.session_state:
         _modal_editar_cuenta()
+    if "_confirmar_baja" in st.session_state:
+        _modal_eliminar_cuenta()
 
     if ver_com:
         with tabs[k]:
@@ -1884,8 +2053,9 @@ if modulo == M_CTAS:
                 sug, etiqueta, ratio = _sugerir_fci(valor)
                 n_filas = 0
                 for d in (df_com, df_rem):
-                    if d is not None and not d.empty and COL_FONDO in d.columns:
-                        n_filas += int((d[COL_FONDO].astype(str).str.strip() == valor).sum())
+                    col = _col_fondo(d)
+                    if d is not None and not d.empty and col:
+                        n_filas += int((d[col].astype(str).str.strip() == valor).sum())
                 # Solo se pre-elige lo exacto o casi idéntico (typos).
                 elegido = sug if (ratio >= 0.95 and sug) else SIN_TOCAR
                 filas_uni.append({"Nombre actual": valor, "Filas": n_filas,
@@ -1929,11 +2099,83 @@ if modulo == M_CTAS:
             if aplicar:
                 st.session_state["mapa_fci"].update(a_cambiar)
                 st.rerun()
+        k += 1
     else:
         if CATALOGO:
             st.markdown('<div class="note" style="margin-top:8px">✅ Todos los FCI de las cuentas '
                         'coinciden con el catálogo, así que la columna FCI es un desplegable y no '
                         'se pueden escribir variantes nuevas.</div>', unsafe_allow_html=True)
+
+    # ── UNIFICAR NOMBRES DE CONTRAPARTE ─────────────────────────────
+    if grupos_ctp:
+        with tabs[k]:
+            st.markdown(f'<div class="chart-label">{len(grupos_ctp)} contrapartes escritas de '
+                        f'más de una forma</div>', unsafe_allow_html=True)
+            st.markdown(
+                '<div class="note warn"><b>Elegí con qué nombre queda cada grupo.</b> Vienen ya '
+                'elegidos con la variante más usada ("Supervielle" / "Banco Supervielle" / '
+                '"Banco Supervielle S.A."). Quedan <i>sin elegir</i> a propósito los grupos donde '
+                'conviven un banco y una ALyC del mismo nombre —"Banco Santander" y "Santander '
+                'Valores", "Banco Macro" y "Macro Securities"—, porque suelen ser dos contrapartes '
+                'distintas. Revisá igual cada línea antes de unificar.</div>', unsafe_allow_html=True)
+
+            NO_UNIF = "— dejar como están —"
+            elecciones = {}
+            # Ordenados por el nombre más usado de cada grupo, no por la clave
+            # interna: un grupo cuyas palabras son todas genéricas ("Banco de
+            # Valores" / "Valores") tiene clave vacía y quedaría primero.
+            for clave_g, variantes in sorted(grupos_ctp.items(),
+                                             key=lambda kv: _sin_acentos(kv[1][0])):
+                total_filas = sum(ctp_conteo[v] for v in variantes)
+                detalle = " · ".join(f"{v} ({ctp_conteo[v]})" for v in variantes)
+                # Preselección salvo que el grupo mezcle un banco con su ALyC.
+                if _conflicto_banco_alyc(variantes):
+                    por_defecto = NO_UNIF
+                elif len({_sin_acentos(v) for v in variantes}) == 1:
+                    # Se escriben igual salvo por los acentos ("Banco Nacion" /
+                    # "Banco Nación"): gana la forma acentuada aunque sea la
+                    # menos usada, porque es la ortografía correcta.
+                    # Se compara en minúscula: si no, cada mayúscula contaría
+                    # como acento y ganaría la variante escrita toda en altas.
+                    por_defecto = max(variantes,
+                                      key=lambda v: (sum(c != d for c, d in
+                                                         zip(v.lower(), _sin_acentos(v))),
+                                                     ctp_conteo[v]))
+                else:
+                    por_defecto = variantes[0]   # la variante más usada
+                opciones = [NO_UNIF] + variantes
+                gc1, gc2 = st.columns([2, 1.4], vertical_alignment="center")
+                with gc1:
+                    st.markdown(f'<div style="font-size:.8rem;padding-top:6px">{detalle}'
+                                f'<br><span style="color:{GRAY_TEXT};font-size:.72rem">'
+                                f'{total_filas} filas en total</span></div>',
+                                unsafe_allow_html=True)
+                with gc2:
+                    elecciones[clave_g] = st.selectbox(
+                        "Unificar con", opciones, index=opciones.index(por_defecto),
+                        key=f"ctp_uni_{clave_g}", label_visibility="collapsed")
+
+            a_cambiar_ctp, filas_ctp = {}, 0
+            for clave_g, destino in elecciones.items():
+                if destino == NO_UNIF:
+                    continue
+                for v in grupos_ctp[clave_g]:
+                    if v != destino:
+                        a_cambiar_ctp[v] = destino
+                        filas_ctp += ctp_conteo[v]
+
+            cu1, cu2 = st.columns([1.3, 3], vertical_alignment="center")
+            with cu1:
+                aplicar_ctp = st.button(f"🔗  Unificar {len(a_cambiar_ctp)} nombre(s)",
+                                        key="btn_uni_ctp", disabled=not a_cambiar_ctp)
+            with cu2:
+                if a_cambiar_ctp:
+                    st.markdown(f'<div class="note">Va a reescribir <b>{filas_ctp} filas</b>. '
+                                f'El cambio se ve al instante, pero recién queda firme cuando '
+                                f'apretás <b>Guardar cambios</b>.</div>', unsafe_allow_html=True)
+            if aplicar_ctp:
+                st.session_state["mapa_ctp"].update(a_cambiar_ctp)
+                st.rerun()
 
     # ── GUARDAR ─────────────────────────────────────────────────────
     # Un solo botón escribe las TRES hojas completas. Un botón por pestaña
@@ -1968,9 +2210,17 @@ if modulo == M_CTAS:
                         f"Seguimiento de cuentas · {iniciales.strip().upper()} · {sello}")
                     if ok:
                         cargar_cuentas.clear()
-                        # Recién ahora se vacían las altas pendientes: si el
-                        # guardado fallaba, se perdían las cuentas nuevas.
+                        # Recién ahora se limpia lo pendiente: si el guardado
+                        # fallaba, se perdían las cuentas nuevas. Las bajas y
+                        # las ediciones van por etiqueta de fila, y al releer
+                        # el Excel esas etiquetas ya no son las mismas, así
+                        # que también hay que vaciarlas o se aplicarían a la
+                        # fila equivocada.
                         st.session_state["nuevas_ctas"] = {"com": [], "rem": []}
+                        st.session_state["bajas_ctas"] = {"com": [], "rem": []}
+                        st.session_state["ediciones_ctas"] = {"com": {}, "rem": {}}
+                        st.session_state["mapa_fci"] = {}
+                        st.session_state["mapa_ctp"] = {}
                         st.session_state["_cuentas_nonce"] = nonce + 1
                         st.success(f"Guardado en el repo a nombre de {iniciales.strip().upper()}. "
                                    f"Las filas que el filtro no mostraba quedaron intactas.")
