@@ -97,6 +97,7 @@ Funciona igual, pero el entorno no es idéntico al de producción.
 
 | Variable | Qué hace | Si falta |
 |---|---|---|
+| `NOVUS_APP` | Qué módulos sirve esta instancia: `analytics`, `onboarding` o `completo` | Vale `completo` (los tres módulos) |
 | `NOVUS_APP_PASSWORD` | Contraseña de acceso | La app abre sin pedir nada |
 | `GITHUB_TOKEN` | Permite guardar los cambios de cuentas | El módulo queda en solo lectura y lo avisa |
 | `GITHUB_REPO` | `usuario/repositorio` | Igual que arriba |
@@ -134,6 +135,39 @@ En VS Code también podés hacer todo esto desde el panel **Source Control** (el
 4. **Settings → Networking → Generate Domain** para tener la URL
 
 **Después de eso:** cada `git push` a `main` redeploya solo. No tocás nada más.
+
+---
+
+## Dos enlaces desde un solo repo
+
+El mismo repositorio se despliega **dos veces** en Railway. La diferencia es una sola
+variable, `NOVUS_APP`:
+
+| Servicio | `NOVUS_APP` | Qué muestra | Escribe datos |
+|---|---|---|---|
+| Dashboards | `analytics` | Flujos & Fondos + Contrapartes | No |
+| Onboarding | `onboarding` | Solo Onboarding | Sí (Excel en la rama `data`) |
+
+**Por qué separados:** Onboarding es el único módulo que modifica datos —edita, da de
+baja y unifica cuentas sobre el Excel—. Con dos servicios, el link de analítica se puede
+compartir sin riesgo de que alguien borre una cuenta, y cada uno lleva **su propia
+contraseña**.
+
+Como es el mismo repo, un solo `git push` actualiza los dos. No hay código duplicado:
+`app.py` decide qué módulos ofrecer según `NOVUS_APP`.
+
+**Para crear el segundo servicio:**
+
+1. En el mismo proyecto de Railway: **New** → **GitHub Repo** → `Novus-Dashboard`
+   (el mismo de siempre)
+2. **Variables** → `NOVUS_APP=onboarding` + `NOVUS_APP_PASSWORD` (una clave distinta)
+   + `GITHUB_TOKEN`, `GITHUB_REPO`, `GITHUB_BRANCH`
+3. **Settings → Networking → Generate Domain**
+4. En el servicio que ya existía, agregá `NOVUS_APP=analytics` y **sacale**
+   `GITHUB_TOKEN`: sin token no puede escribir el Excel ni por accidente.
+
+> Si `NOVUS_APP` no está configurada, la app se comporta como siempre y muestra los tres
+> módulos. Por eso el servicio actual sigue funcionando aunque todavía no la agregues.
 
 ---
 

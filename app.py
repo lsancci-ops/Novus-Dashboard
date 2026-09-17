@@ -29,8 +29,37 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+# ═══════════════════════════════════════════════════════════════
+# PERFIL DE LA INSTANCIA
+# ═══════════════════════════════════════════════════════════════
+# El mismo repo se despliega DOS veces en Railway y cada servicio define su
+# variable NOVUS_APP:
+#   · "analytics"  → Flujos & Fondos + Contrapartes  (solo lectura)
+#   · "onboarding" → Onboarding                      (escribe sobre el Excel)
+# Se separan porque Onboarding es el único módulo que MODIFICA datos: así el
+# link de analítica se puede compartir sin dar de baja cuentas por accidente,
+# y cada servicio lleva su propia contraseña.
+# Sin la variable vale "completo" (los tres módulos), que es como corre en
+# local y como venía corriendo hasta ahora: nada se rompe si no se configura.
+APP_PERFIL = (os.environ.get("NOVUS_APP") or "completo").strip().lower()
+if APP_PERFIL not in ("completo", "analytics", "onboarding"):
+    APP_PERFIL = "completo"
+
+TITULO_PESTANA = {
+    "completo":   "Novus AM | Dashboards",
+    "analytics":  "Novus AM | Dashboards",
+    "onboarding": "Novus AM | Onboarding",
+}[APP_PERFIL]
+
+# Lo primero que se ve al abrir el link, así que tiene que decir a qué entrás.
+SUBTITULO_LOGIN = {
+    "completo":   "Dashboards de middle office · acceso restringido",
+    "analytics":  "Flujos, fondos y contrapartes · acceso restringido",
+    "onboarding": "Onboarding de cuentas · acceso restringido",
+}[APP_PERFIL]
+
 st.set_page_config(
-    page_title="Novus AM | Dashboards",
+    page_title=TITULO_PESTANA,
     page_icon="📊",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -833,7 +862,7 @@ def login_gate():
             '<div class="login-card">'
             '<div class="login-eyebrow">middle office</div>'
             '<div class="login-title">novus <span>asset management</span></div>'
-            '<div class="login-sub">Dashboard de contrapartes · acceso restringido</div>'
+            f'<div class="login-sub">{SUBTITULO_LOGIN}</div>'
             '</div>', unsafe_allow_html=True)
 
         if not clave:
@@ -887,7 +916,15 @@ M_FCI  = "Flujos & Fondos"
 # marca a la izquierda, pestañas al centro y sesión a la derecha. El
 # key="novus_header" del container es lo que el CSS usa para pintar la
 # barra full-bleed (ver "HEADER SUPERIOR" en el bloque de estilos).
-MODULOS = [M_FCI, M_DASH, M_CTAS]
+# Qué módulos sirve ESTA instancia (ver APP_PERFIL arriba de todo).
+MODULOS = {
+    "completo":   [M_FCI, M_DASH, M_CTAS],
+    "analytics":  [M_FCI, M_DASH],
+    "onboarding": [M_CTAS],
+}[APP_PERFIL]
+# Con un solo módulo no hay nada que navegar: la barra de pestañas se omite
+# entera (no se dibuja una pestaña única ni un menú de un solo ítem).
+HAY_NAV = len(MODULOS) > 1
 
 # Hay DOS navegadores para el mismo estado: las pestañas en línea (desktop)
 # y un menú hamburguesa (celular/tablet). El CSS muestra uno solo según el
@@ -895,8 +932,10 @@ MODULOS = [M_FCI, M_DASH, M_CTAS]
 # verdad, y cada uno sincroniza al otro para que nunca queden desfasados.
 # El chequeo contra MODULOS evita que una sesión vieja (con los nombres
 # anteriores guardados) le pase al radio un valor que ya no existe.
+# MODULOS[0] y no M_FCI: en la instancia de Onboarding ese módulo no existe
+# y dejaría la sesión apuntando a algo que esta instancia no sirve.
 if st.session_state.get("modulo_actual") not in MODULOS:
-    st.session_state["modulo_actual"] = M_FCI
+    st.session_state["modulo_actual"] = MODULOS[0]
 for _k in ("nav_pills", "nav_movil"):
     if st.session_state.get(_k) not in MODULOS:
         st.session_state[_k] = st.session_state["modulo_actual"]
@@ -922,17 +961,18 @@ with st.container(key="novus_header"):
             '<span class="header-badge">middle office</span></div>',
             unsafe_allow_html=True)
     with hc2:
-        # Desktop: pestañas en línea.
-        with st.container(key="novus_topnav"):
-            st.radio("Navegación", MODULOS, horizontal=True,
-                     label_visibility="collapsed", key="nav_pills",
-                     on_change=_nav_desde_pills)
-        # Celular/tablet: hamburguesa. El label muestra el módulo actual,
-        # así se sabe dónde se está parado con el menú cerrado.
-        with st.container(key="novus_hamburguesa"):
-            with st.popover(f"☰   {st.session_state['modulo_actual']}"):
-                st.radio("Ir a", MODULOS, label_visibility="collapsed",
-                         key="nav_movil", on_change=_nav_desde_movil)
+        if HAY_NAV:
+            # Desktop: pestañas en línea.
+            with st.container(key="novus_topnav"):
+                st.radio("Navegación", MODULOS, horizontal=True,
+                         label_visibility="collapsed", key="nav_pills",
+                         on_change=_nav_desde_pills)
+            # Celular/tablet: hamburguesa. El label muestra el módulo actual,
+            # así se sabe dónde se está parado con el menú cerrado.
+            with st.container(key="novus_hamburguesa"):
+                with st.popover(f"☰   {st.session_state['modulo_actual']}"):
+                    st.radio("Ir a", MODULOS, label_visibility="collapsed",
+                             key="nav_movil", on_change=_nav_desde_movil)
     with hc3:
         # Texto corto: en el header conviven con el botón de salir, y
         # "acceso · protegido con contraseña" apretaba todo contra el borde.
