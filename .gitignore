@@ -18,3 +18,8 @@ __pycache__/
 app_v*_backup.py
 _bloque*.py
 _modulo*.py
+
+# Excel de origen de préstamos: ya está migrado a prestamos_titulos.csv, que
+# es lo que la app usa para sembrar la hoja. Dejarlo suelto en el repo
+# invitaría a editar el archivo equivocado.
+Resumen Prestamos de Titulos Vigentes.xls

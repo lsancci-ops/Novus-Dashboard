@@ -1027,7 +1027,32 @@ if modulo == M_CTAS:
     HOJA_COM   = "Cuentas comitentes"
     HOJA_REM   = "Cuentas remuneradas"
     HOJA_FCI   = "Lista FCI"
+    HOJA_PRE   = "Préstamos de títulos"
     ESTADOS    = ["En proceso", "Abierta", "Rechazada", "De baja"]
+
+    # ── PRÉSTAMOS DE TÍTULOS ────────────────────────────────────────
+    # Venían de un Excel aparte con dos hojas ("Vigentes" / "Vencidos") que
+    # obligaba a mover filas a mano al vencer. Acá es UNA sola hoja con una
+    # columna Estado: el vencimiento sale de la fecha y la app avisa.
+    CSV_PRE    = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                              "prestamos_titulos.csv")
+    ESTADOS_PRE = ["Vigente", "Renovado", "Cobrado", "Cancelado", "Vencido"]
+    # Se carga a mano                    ↓
+    PRE_ENTRADA = ["Concertación", "Liquidación", "Deudor", "Fondo", "Contraparte",
+                   "Especie", "Cantidad", "Tasa", "Precio", "Estado", "Observaciones"]
+    # Fórmulas del Excel original, verificadas contra los datos con desvío cero.
+    # No se editan: se recalculan en cada carga y antes de guardar.
+    PRE_CALCULO = ["Plazo", "Monto", "Tasa Aplicada", "Interés", "Interés Diario",
+                   "Ajuste", "A Cobrar"]
+    # Sello de cuándo se actualizaba el archivo de vencidos. Queda para no
+    # perder el histórico, pero el alta ya no lo pide: con una sola hoja
+    # no hay nada que "pasar a vencidos".
+    PRE_HISTORICO = ["Pasado a vencidos"]
+    COLS_PRE = (["Concertación", "Liquidación", "Plazo", "Deudor", "Fondo",
+                 "Contraparte", "Especie", "Cantidad", "Tasa", "Precio", "Monto",
+                 "Tasa Aplicada", "Interés", "Interés Diario", "Ajuste", "A Cobrar",
+                 "Estado", "Observaciones"] + PRE_HISTORICO)
+    DIAS_AVISO_PRE = 2   # a cuántos días del vencimiento salta el cartel
 
     # Pipeline documental de onboarding (columna "Etapa", nueva — no existía
     # en el Excel). Es más granular que "Estado" y se muestra como stepper.
@@ -1145,19 +1170,64 @@ if modulo == M_CTAS:
                            "Recargá la página para traer la última versión y volvé a aplicar lo tuyo.")
         return False, f"GitHub rechazó el guardado (HTTP {code}): {resp}"
 
-    # ── Lectura de las tres hojas ────────────────────────────────────
+    def _recalcular_pre(df):
+        """Reescribe las columnas que en el Excel original eran fórmulas.
+        Se corre al leer y antes de guardar, así el número nunca depende de
+        que alguien haya arrastrado bien la fórmula: en el archivo que vino,
+        69 de 77 filas tenían Monto e Interés en cero por falta de Precio."""
+        if df is None or df.empty:
+            return df
+        d = df.copy()
+        for c in COLS_PRE:
+            if c not in d.columns:
+                d[c] = pd.NA
+        for c in ("Concertación", "Liquidación", "Pasado a vencidos"):
+            d[c] = pd.to_datetime(d[c], errors="coerce")
+        for c in ("Cantidad", "Tasa", "Precio"):
+            d[c] = pd.to_numeric(d[c], errors="coerce")
+
+        d["Plazo"] = (d["Liquidación"] - d["Concertación"]).dt.days
+        d["Monto"] = d["Cantidad"] * d["Precio"]
+        d["Tasa Aplicada"] = d["Tasa"] * d["Plazo"] / 365
+        d["Interés"] = d["Monto"] * d["Tasa Aplicada"]
+        plazo_ok = pd.to_numeric(d["Plazo"], errors="coerce")
+        d["Interés Diario"] = np.where(plazo_ok.gt(0), d["Interés"] / plazo_ok, np.nan)
+        d["A Cobrar"] = d["Interés"].round(2)
+        d["Ajuste"] = d["A Cobrar"] - d["Interés"]
+        # Float de verdad, no object: una columna object con NaN la grilla la
+        # dibuja escribiendo "None" en cada celda vacía.
+        for c in PRE_CALCULO:
+            d[c] = pd.to_numeric(d[c], errors="coerce").astype("float64")
+        return d[COLS_PRE]
+
+    def _sembrar_pre():
+        """Primera vez: la hoja de préstamos todavía no está en el Excel, así
+        que se arma con el CSV migrado del archivo viejo. Al primer Guardar
+        queda dentro del xlsx y este CSV no se vuelve a mirar."""
+        if os.path.exists(CSV_PRE):
+            try:
+                return pd.read_csv(CSV_PRE)
+            except Exception:
+                pass
+        return pd.DataFrame(columns=COLS_PRE)
+
+    # ── Lectura de las hojas ─────────────────────────────────────────
     def _leer_hojas(contenido_bytes):
-        """Parsea el xlsx. Devuelve (df_com, df_rem, df_fci, error)."""
+        """Parsea el xlsx. Devuelve (df_com, df_rem, df_fci, df_pre, error)."""
         try:
             xl = pd.ExcelFile(io.BytesIO(contenido_bytes), engine="openpyxl")
             faltan = [h for h in (HOJA_COM, HOJA_REM, HOJA_FCI) if h not in xl.sheet_names]
             if faltan:
-                return None, None, None, (
+                return None, None, None, None, (
                     f"Al Excel le faltan estas hojas: {', '.join(faltan)}. "
                     f"Hojas encontradas: {', '.join(xl.sheet_names)}.")
-            return (xl.parse(HOJA_COM), xl.parse(HOJA_REM), xl.parse(HOJA_FCI), None)
+            # La de préstamos es opcional: si no está, se siembra. No se
+            # considera error para no romper el Excel que ya está en uso.
+            pre = xl.parse(HOJA_PRE) if HOJA_PRE in xl.sheet_names else _sembrar_pre()
+            return (xl.parse(HOJA_COM), xl.parse(HOJA_REM), xl.parse(HOJA_FCI),
+                    _recalcular_pre(pre), None)
         except Exception as e:
-            return None, None, None, f"No se pudo leer el Excel: {e}"
+            return None, None, None, None, f"No se pudo leer el Excel: {e}"
 
     @st.cache_data(ttl=120, show_spinner="Cargando seguimiento de cuentas…")
     def cargar_cuentas(_modo, _nonce):
@@ -1166,14 +1236,14 @@ if modulo == M_CTAS:
         if _modo == "edicion":
             ok, err = _asegurar_rama()
             if not ok:
-                return None, None, None, None, err
+                return None, None, None, None, None, err
             contenido, sha, err = _bajar_excel()
             if err:
-                return None, None, None, None, err
+                return None, None, None, None, None, err
             if contenido is None:
                 # Primera vez: sembrar la rama data con la copia del repo
                 if not os.path.exists(XLS_LOCAL):
-                    return None, None, None, None, (
+                    return None, None, None, None, None, (
                         f"No hay `{XLS_NAME}` ni en la rama '{GH_BRANCH}' ni en el repo. "
                         f"Subí el archivo al repo una vez para inicializar.")
                 with open(XLS_LOCAL, "rb") as f:
@@ -1181,19 +1251,19 @@ if modulo == M_CTAS:
                 ok, err = _subir_excel(contenido, None,
                                        "Inicializar seguimiento de cuentas desde el repo")
                 if not ok:
-                    return None, None, None, None, err
+                    return None, None, None, None, None, err
                 _, sha, err = _bajar_excel()
                 if err:
-                    return None, None, None, None, err
+                    return None, None, None, None, None, err
         else:
             if not os.path.exists(XLS_LOCAL):
-                return None, None, None, None, f"No se encontró `{XLS_NAME}` junto a app.py."
+                return None, None, None, None, None, f"No se encontró `{XLS_NAME}` junto a app.py."
             with open(XLS_LOCAL, "rb") as f:
                 contenido = f.read()
             sha = None
 
-        c, r, f_, err = _leer_hojas(contenido)
-        return c, r, f_, sha, err
+        c, r, f_, p, err = _leer_hojas(contenido)
+        return c, r, f_, p, sha, err
 
     def _normalizar(df, nombre_hoja):
         """Limpia estados y avisa de columnas faltantes sin romper la app."""
@@ -1238,7 +1308,7 @@ if modulo == M_CTAS:
             unsafe_allow_html=True)
 
     nonce = st.session_state.get("_cuentas_nonce", 0)
-    df_com, df_rem, df_fci, sha_actual, error = cargar_cuentas(
+    df_com, df_rem, df_fci, df_pre, sha_actual, error = cargar_cuentas(
         "edicion" if MODO_EDICION else "lectura", nonce)
 
     if error:
@@ -1844,12 +1914,47 @@ if modulo == M_CTAS:
     # Se arranca con las hojas COMPLETAS: los cambios del modal ya están
     # aplicados sobre df_com/df_rem más arriba, así que alcanza con esto.
     res_com, res_rem, res_fci = df_com, df_rem, df_fci
+    res_pre = df_pre
+
+    # ── PRÉSTAMOS: DÍAS AL VENCIMIENTO ──────────────────────────────
+    # "Vigente" es lo que dice la fila; "vence en N días" sale de la fecha.
+    # Se separan a propósito: un préstamo marcado Vigente cuya Liquidación ya
+    # pasó es justamente lo que hay que ver, no algo para esconder.
+    HOY_PRE = pd.Timestamp.now().normalize()
+
+    def _fmt_num(v, dec=0):
+        """Cantidad con separador de miles, sin moneda: los nominales de un
+        préstamo no son dólares ni pesos, son unidades de la especie."""
+        try:
+            v = float(v)
+        except (TypeError, ValueError):
+            return "—"
+        if pd.isna(v):
+            return "—"
+        return f"{v:,.{dec}f}".replace(",", "@").replace(".", ",").replace("@", ".")
+
+    def _dias_al_vto(df):
+        if df is None or df.empty or "Liquidación" not in df.columns:
+            return pd.Series(dtype="float64")
+        return (pd.to_datetime(df["Liquidación"], errors="coerce") - HOY_PRE).dt.days
+
+    pre_abiertos = (df_pre[df_pre["Estado"].astype(str).str.strip() == "Vigente"]
+                    if df_pre is not None and not df_pre.empty and "Estado" in df_pre.columns
+                    else (df_pre.iloc[0:0] if df_pre is not None else None))
+    dias_abiertos = _dias_al_vto(pre_abiertos)
+    n_por_vencer = int(((dias_abiertos >= 0) & (dias_abiertos <= DIAS_AVISO_PRE)).sum()) \
+        if len(dias_abiertos) else 0
+    n_vencidos_abiertos = int((dias_abiertos < 0).sum()) if len(dias_abiertos) else 0
 
     nombres = []
     if ver_com:
         nombres.append("  Comitentes (ALyCs)  ")
     if ver_rem:
         nombres.append("  Remuneradas (bancos)  ")
+    etiqueta_pre = "  Préstamos de títulos  "
+    if n_por_vencer or n_vencidos_abiertos:
+        etiqueta_pre = f"  ⚠ Préstamos de títulos ({n_por_vencer + n_vencidos_abiertos})  "
+    nombres.append(etiqueta_pre)
     nombres += ["  Vista consolidada  ", "  FCI y matrículas  "]
     # Las pestañas de unificación aparecen SOLO si hay algo que unificar, y
     # se van solas cuando queda limpio.
@@ -1857,6 +1962,33 @@ if modulo == M_CTAS:
         nombres.append(f"  ⚠ Unificar FCI ({len(fci_sueltos)})  ")
     if grupos_ctp:
         nombres.append(f"  ⚠ Unificar contrapartes ({len(grupos_ctp)})  ")
+
+    # ── CARTEL DE VENCIMIENTOS ──────────────────────────────────────
+    # Va ACÁ arriba, fuera de la pestaña de préstamos: un aviso que solo se
+    # ve entrando a la pestaña que corresponde no sirve de aviso.
+    if n_por_vencer or n_vencidos_abiertos:
+        partes = []
+        if n_vencidos_abiertos:
+            partes.append(f"<b>{n_vencidos_abiertos} préstamo(s) ya vencieron</b> y siguen "
+                          f"marcados como vigentes")
+        if n_por_vencer:
+            plural = "n" if n_por_vencer > 1 else ""
+            partes.append(f"<b>{n_por_vencer} vence{plural} dentro de "
+                          f"{DIAS_AVISO_PRE} día(s)</b>")
+        detalle = []
+        for _i, _f in pre_abiertos.assign(_d=dias_abiertos).sort_values("_d").iterrows():
+            d_ = _f["_d"]
+            if pd.isna(d_) or d_ > DIAS_AVISO_PRE:
+                continue
+            cuando = ("vencido hace %d día(s)" % abs(int(d_))) if d_ < 0 else (
+                "vence hoy" if d_ == 0 else "vence en %d día(s)" % int(d_))
+            detalle.append(f"· {_f.get('Contraparte', '—')} · {_f.get('Especie', '—')} · "
+                           f"{_fmt_num(_f.get('Cantidad'))} nominales — <b>{cuando}</b>")
+        st.markdown(
+            '<div class="note warn"><b>⚠ Préstamos de títulos próximos a vencer.</b><br>'
+            + " y ".join(partes) + ".<br>" + "<br>".join(detalle) +
+            '</div>', unsafe_allow_html=True)
+
     tabs = list(st.tabs(nombres))
     k = 0
 
@@ -2139,6 +2271,165 @@ if modulo == M_CTAS:
             _tabla_onboarding(vis_rem, ETAPAS_REM, "rem", "cuentas remuneradas", TIPO_REM)
         k += 1
 
+    # ── PRÉSTAMOS DE TÍTULOS ────────────────────────────────────────
+    # Acá SÍ conviene una grilla editable y no el modal de las cuentas: son
+    # 11 campos de carga, casi todos numéricos, y así se trabaja igual que
+    # en el Excel del que vienen. Las 7 columnas de fórmula van bloqueadas.
+    with tabs[k]:
+        if res_pre is None:
+            st.info("No hay hoja de préstamos todavía.")
+        else:
+            vig_pre = res_pre[res_pre["Estado"].astype(str).str.strip() == "Vigente"]
+            d_vig = _dias_al_vto(vig_pre)
+            nominales = pd.to_numeric(vig_pre["Cantidad"], errors="coerce").sum()
+            a_cobrar = pd.to_numeric(vig_pre["A Cobrar"], errors="coerce").sum()
+            prox = pd.to_datetime(vig_pre["Liquidación"], errors="coerce").min()
+
+            p1, p2, p3, p4 = st.columns(4)
+            with p1:
+                st.markdown(f'<div class="kpi-card accent"><div class="kpi-label">Vigentes</div>'
+                            f'<div class="kpi-value">{len(vig_pre)}</div>'
+                            f'<div class="kpi-sub">de {len(res_pre)} en la hoja</div></div>',
+                            unsafe_allow_html=True)
+            with p2:
+                st.markdown(f'<div class="kpi-card"><div class="kpi-label">Nominales prestados</div>'
+                            f'<div class="kpi-value sm">{_fmt_num(nominales)}</div>'
+                            f'<div class="kpi-sub">suma de cantidades vigentes</div></div>',
+                            unsafe_allow_html=True)
+            with p3:
+                # "A cobrar" y no "rendimiento": es el interés pactado del
+                # alquiler, no el retorno de ninguna cartera.
+                st.markdown(f'<div class="kpi-card"><div class="kpi-label">Interés a cobrar</div>'
+                            f'<div class="kpi-value sm">{_fmt_num(a_cobrar, 2)}</div>'
+                            f'<div class="kpi-sub">de los préstamos vigentes</div></div>',
+                            unsafe_allow_html=True)
+            with p4:
+                if pd.notna(prox):
+                    faltan = int((prox - HOY_PRE).days)
+                    txt = ("vencido" if faltan < 0 else
+                           "es hoy" if faltan == 0 else f"en {faltan} día(s)")
+                    color = RED if faltan <= 0 else (AMBER if faltan <= DIAS_AVISO_PRE else GREEN)
+                    st.markdown(
+                        f'<div class="kpi-card"><div class="kpi-label">Próximo vencimiento</div>'
+                        f'<div class="kpi-value sm" style="color:{color}">'
+                        f'{prox.strftime("%d/%m/%Y")}</div>'
+                        f'<div class="kpi-sub">{txt}</div></div>', unsafe_allow_html=True)
+                else:
+                    st.markdown('<div class="kpi-card"><div class="kpi-label">Próximo '
+                                'vencimiento</div><div class="kpi-value sm">—</div>'
+                                '<div class="kpi-sub">sin préstamos vigentes</div></div>',
+                                unsafe_allow_html=True)
+
+            fp1, fp2, fp3 = st.columns([1.4, 1.2, 1.2])
+            with fp1:
+                f_est_pre = st.multiselect("Estado", ESTADOS_PRE, default=["Vigente"],
+                                           key="fp_estado", placeholder="Todos")
+            with fp2:
+                fondos_pre = sorted(res_pre["Fondo"].dropna().astype(str).str.strip().unique())
+                f_fondo_pre = st.multiselect("Fondo", fondos_pre, key="fp_fondo",
+                                             placeholder="Todos")
+            with fp3:
+                ctp_pre = sorted(res_pre["Contraparte"].dropna().astype(str).str.strip().unique())
+                f_ctp_pre = st.multiselect("Contraparte", ctp_pre, key="fp_ctp",
+                                           placeholder="Todas")
+
+            mostrar = res_pre
+            for col, sel in (("Estado", f_est_pre), ("Fondo", f_fondo_pre),
+                             ("Contraparte", f_ctp_pre)):
+                if sel:
+                    mostrar = mostrar[mostrar[col].astype(str).str.strip().isin(sel)]
+
+            st.markdown(f'<div class="chart-label">{len(mostrar)} préstamo(s) · '
+                        f'las columnas grises se calculan solas</div>', unsafe_allow_html=True)
+
+            # Se muestra con índice corrido y se guarda el original aparte:
+            # con un índice salteado (72, 75, 76…) Streamlit ignora
+            # hide_index y dibuja esos números como si fueran una columna más.
+            idx_orig = list(mostrar.index)
+            vista = mostrar.reset_index(drop=True).copy()
+            # Las calculadas van como TEXTO ya formateado. La grilla dibuja
+            # "None" en toda celda numérica vacía —da igual el format o que
+            # esté bloqueada, lo comprobé— y acá 69 de 77 filas no tienen
+            # precio. Como son de solo lectura, pasarlas a texto no cuesta
+            # nada y de paso quedan con separador de miles argentino.
+            DEC_PRE = {"Plazo": 0, "Monto": 2, "Tasa Aplicada": 6, "Interés": 2,
+                       "Interés Diario": 2, "Ajuste": 4, "A Cobrar": 2}
+            for c, dec in DEC_PRE.items():
+                vista[c] = mostrar[c].map(lambda v: _fmt_num(v, dec)).values
+
+            ed_pre = st.data_editor(
+                vista, hide_index=True, num_rows="dynamic", key="ed_pre",
+                height=int(min(520, 80 + 35 * max(len(mostrar), 3))),
+                disabled=PRE_CALCULO + PRE_HISTORICO,
+                column_config={
+                    "Concertación": st.column_config.DateColumn("Concertación", format="DD/MM/YYYY"),
+                    "Liquidación": st.column_config.DateColumn("Vencimiento", format="DD/MM/YYYY"),
+                    "Plazo": st.column_config.TextColumn("Plazo", help="Vencimiento − concertación", width="small"),
+                    "Deudor": st.column_config.TextColumn("Deudor"),
+                    "Fondo": st.column_config.TextColumn("Fondo"),
+                    "Contraparte": st.column_config.TextColumn("Contraparte"),
+                    "Especie": st.column_config.TextColumn("Especie"),
+                    "Cantidad": st.column_config.NumberColumn("Cantidad", format="%.0f"),
+                    "Tasa": st.column_config.NumberColumn("Tasa", format="%.4f", help="Anual, en tanto por uno (0,03 = 3%)"),
+                    "Precio": st.column_config.NumberColumn("Precio", format="%.6f"),
+                    "Monto": st.column_config.TextColumn("Monto", help="Cantidad × Precio"),
+                    "Tasa Aplicada": st.column_config.TextColumn("Tasa aplicada", help="Tasa × Plazo / 365"),
+                    "Interés": st.column_config.TextColumn("Interés", help="Monto × Tasa aplicada"),
+                    "Interés Diario": st.column_config.TextColumn("Interés diario", help="Interés / Plazo"),
+                    "Ajuste": st.column_config.TextColumn("Ajuste", help="A cobrar − Interés"),
+                    "A Cobrar": st.column_config.TextColumn("A cobrar", help="Interés redondeado"),
+                    "Estado": st.column_config.SelectboxColumn("Estado", options=ESTADOS_PRE, required=False),
+                    "Observaciones": st.column_config.TextColumn("Observaciones", width="medium"),
+                    "Pasado a vencidos": st.column_config.DateColumn(
+                        "Pasado a vencidos", format="DD/MM/YYYY",
+                        help="Histórico del método viejo de dos hojas. Ya no se usa."),
+                })
+
+            # Streamlit devuelve la grilla conservando el índice de cada fila
+            # que sobrevivió (las borradas simplemente no vienen) y numera las
+            # altas a partir del final. Por eso se mapea por ÍNDICE y no por
+            # posición: borrar una fila del medio corre todas las de abajo y
+            # el mapeo posicional terminaría escribiendo en el préstamo
+            # equivocado.
+            n = len(idx_orig)
+            vivas = [i for i in ed_pre.index if isinstance(i, (int, np.integer)) and i < n]
+            nuevas = [i for i in ed_pre.index if i not in vivas]
+
+            # Solo vuelven las columnas de carga: las calculadas se mostraron
+            # como texto ya formateado ("1.678.982,48") y devolverlas sería
+            # meter esa cadena en una columna numérica.
+            EDITABLES = [c for c in PRE_ENTRADA + PRE_HISTORICO if c in ed_pre.columns]
+            editadas = ed_pre.loc[vivas, EDITABLES].copy()
+            editadas.index = [idx_orig[i] for i in vivas]
+            altas = ed_pre.loc[nuevas, EDITABLES]
+
+            base = res_pre.copy()
+            borradas = [idx_orig[i] for i in range(n) if i not in set(vivas)]
+            if borradas:
+                base = base.drop(index=borradas, errors="ignore")
+            if len(editadas):
+                base.loc[editadas.index, EDITABLES] = editadas
+            res_pre = (pd.concat([base, altas], ignore_index=True)
+                       if len(altas) else base)
+            res_pre = _recalcular_pre(res_pre)
+
+            st.markdown(
+                '<div class="note"><b>Cómo se carga un préstamo.</b> Escribí en la última fila '
+                'vacía: concertación, vencimiento, deudor, fondo, contraparte, especie, cantidad, '
+                'tasa y precio. El plazo, el monto, el interés y lo que hay a cobrar se calculan '
+                'solos — por eso están en gris y no se pueden escribir. Para dar de baja una fila, '
+                'seleccionala con el casillero de la izquierda y apretá la papelera. Todo queda '
+                'pendiente hasta que aprietes <b>Guardar cambios</b> abajo.</div>',
+                unsafe_allow_html=True)
+            if len(vig_pre) and pd.to_numeric(vig_pre["Precio"], errors="coerce").isna().any():
+                sin_precio = int(pd.to_numeric(vig_pre["Precio"], errors="coerce").isna().sum())
+                st.markdown(
+                    f'<div class="note warn"><b>{sin_precio} de {len(vig_pre)} préstamos vigentes '
+                    f'no tienen precio cargado</b>, así que su monto e interés quedan en cero. '
+                    f'Venían así del Excel original. Cargá el precio de la especie y los números '
+                    f'se completan solos.</div>', unsafe_allow_html=True)
+    k += 1
+
     # ── VISTA CONSOLIDADA (solo lectura, con fondo de color por estado) ──
     with tabs[k]:
         partes = []
@@ -2382,6 +2673,15 @@ if modulo == M_CTAS:
             a_datos(res_com).to_excel(w, sheet_name=HOJA_COM, index=False)
             a_datos(res_rem).to_excel(w, sheet_name=HOJA_REM, index=False)
             res_fci.to_excel(w, sheet_name=HOJA_FCI, index=False)
+            # Se recalcula una vez más justo antes de escribir: si alguien
+            # tocó cantidad o precio, el monto y el interés que van al Excel
+            # tienen que ser los del dato nuevo, no los de la carga.
+            pre_out = _recalcular_pre(res_pre)
+            if pre_out is None:
+                pre_out = pd.DataFrame(columns=COLS_PRE)
+            for c in ("Concertación", "Liquidación", "Pasado a vencidos"):
+                pre_out[c] = pd.to_datetime(pre_out[c], errors="coerce").dt.date
+            pre_out.to_excel(w, sheet_name=HOJA_PRE, index=False)
         return buf.getvalue()
 
     st.markdown('<div class="section-title">Guardar</div>'
